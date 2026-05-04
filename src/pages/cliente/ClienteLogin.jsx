@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import logo from '../../assets/logo.png'; // IMPORTANDO A LOGO AQUI
 
 export default function ClienteLogin() {
-  const [email, setEmail] = useState(''); // Trocamos 'usuario' por 'email'
+  const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [verSenha, setVerSenha] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -14,7 +15,6 @@ export default function ClienteLogin() {
     setLoading(true);
 
     try {
-      // 1. Faz o login pelo sistema seguro de Auth do Supabase
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password: senha,
@@ -24,7 +24,6 @@ export default function ClienteLogin() {
 
       const userId = authData.user.id;
 
-      // 2. Busca os dados do cliente para saber se ele é Admin (João) ou Cliente normal
       const { data: cliente, error: clienteError } = await supabase
         .from('clientes')
         .select('eh_admin')
@@ -33,7 +32,6 @@ export default function ClienteLogin() {
 
       if (clienteError) throw new Error('Dados do usuário não encontrados.');
 
-      // 3. Salva a sessão localmente e redireciona
       localStorage.setItem('clienteId', userId);
       navigate(cliente.eh_admin ? '/admin/dashboard' : '/dashboard');
 
@@ -45,10 +43,24 @@ export default function ClienteLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white flex flex-col items-center pt-20 px-6 font-sans">
+    <div className="min-h-screen bg-[#09090b] text-white flex flex-col items-center justify-center px-6 font-sans">
+      
+      {/* 1. LOGO FORA DO CONTAINER */}
+      <div className="mb-8 flex justify-center">
+        <img 
+          src={logo} 
+          alt="Barbearia do João" 
+          className="w-32 h-32 rounded-full border-[3px] border-[#CEAA6B]/40 shadow-[0_0_20px_rgba(206,170,107,0.15)] object-cover"
+        />
+      </div>
+
+      {/* CONTAINER PRINCIPAL DO FORMULÁRIO */}
       <div className="w-full max-w-[360px] bg-[#121212] border border-[#27272a] rounded-[28px] p-8 shadow-2xl">
+        
+        {/* 2. NOME BEM-VINDO NO CONTAINER */}
         <header className="mb-8 text-center">
-          <h1 className="text-2xl font-bold">Bem-vindo</h1>
+          <h1 className="text-2xl font-bold text-white">Bem-vindo</h1>
+          <p className="text-zinc-500 text-xs mt-1">Faça login para acessar sua conta</p>
         </header>
         
         <form onSubmit={handleLogin} className="space-y-5">
@@ -78,9 +90,21 @@ export default function ClienteLogin() {
           </button>
         </form>
 
-        <button onClick={() => navigate('/cadastro')} className="w-full mt-6 text-zinc-500 text-sm">
-          Ainda não tem conta? <span className="text-[#CEAA6B] font-bold underline">Cadastre-se</span>
-        </button>
+        {/* 3. LINKS REORGANIZADOS (Cadastro primeiro, Esqueci a senha embaixo) */}
+        <div className="mt-8 flex flex-col items-center gap-4">
+          <button onClick={() => navigate('/cadastro')} className="w-full text-zinc-500 text-sm">
+            Ainda não tem conta? <span className="text-[#CEAA6B] font-bold underline">Cadastre-se</span>
+          </button>
+
+          <button 
+            type="button"
+            onClick={() => navigate('/esqueci-senha')} 
+            className="text-zinc-600 hover:text-white text-xs font-bold transition-colors"
+          >
+            Esqueceu sua senha?
+          </button>
+        </div>
+
       </div>
     </div>
   );
