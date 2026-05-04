@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 // Páginas do Cliente
 import ClienteLogin from './pages/cliente/ClienteLogin';
 import ClienteCadastro from './pages/cliente/ClienteCadastro';
+import EsqueciSenha from './pages/cliente/EsqueciSenha'; // NOVA TELA
+import RedefinirSenha from './pages/cliente/RedefinirSenha'; // NOVA TELA
 import EscolhaPlano from './pages/cliente/EscolhaPlano';
 import ClienteDashboard from './pages/cliente/ClienteDashboard';
 import TelaCorte from './pages/cliente/TelaCorte';
@@ -18,6 +20,8 @@ export default function App() {
         {/* Fluxo de Entrada */}
         <Route path="/" element={<ClienteLogin />} />
         <Route path="/cadastro" element={<ClienteCadastro />} />
+        <Route path="/esqueci-senha" element={<EsqueciSenha />} />
+        <Route path="/redefinir-senha" element={<RedefinirSenha />} />
         <Route path="/planos" element={<EscolhaPlano />} />
         
         {/* Área do Cliente */}
