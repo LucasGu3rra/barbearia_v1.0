@@ -5,18 +5,19 @@ import ModalAlerta from "../components/ModalAlerta";
 
 export default function AdminDashboard() {
   const [clientes, setClientes] = useState([]);
-  const [cortesGerais, setCortesGerais] = useState([]); // NOVO: Armazena todos os cortes da barbearia
+  const [cortesGerais, setCortesGerais] = useState([]); 
   const [loading, setLoading] = useState(true);
   
-  // Abas e Filtros
-  const [abaAtiva, setAbaAtiva] = useState('todos'); // 'todos', 'ativos', 'inativos', 'historico'
+  const [abaAtiva, setAbaAtiva] = useState('todos'); 
   const [busca, setBusca] = useState('');
   
-  // NOVO: Controle de Data para o Histórico (padrão: hoje)
-  const hojeFormatoInput = new Date().toISOString().split('T')[0];
-  const [dataFiltro, setDataFiltro] = useState(hojeFormatoInput);
+  // Ajuste de fuso horário para o valor inicial do input date
+  const getHojeLocal = () => {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  };
+  const [dataFiltro, setDataFiltro] = useState(getHojeLocal());
 
-  // Estados do Modal
   const [modalConfig, setModalConfig] = useState({ 
     isOpen: false, type: 'alert', title: '', message: '', onConfirm: null 
   });
@@ -35,19 +36,17 @@ export default function AdminDashboard() {
 
   const carregarDados = async () => {
     try {
-      // 1. Busca os clientes
       const { data: dadosClientes, error: errClientes } = await supabase
         .from('clientes')
         .select(`
           id, nome, whatsapp,
-          assinaturas ( id, plano_escolhido, status, data_vencimento )
+          assinaturas ( id, plano_escolhido, status, data_vencimento, created_at )
         `)
         .eq('eh_admin', false) 
         .order('nome');
 
       if (errClientes) throw errClientes;
 
-      // 2. NOVO: Busca TODOS os cortes de todos os clientes (com os nomes anexados)
       const { data: dadosCortes, error: errCortes } = await supabase
         .from('historico_cortes')
         .select(`
@@ -103,11 +102,43 @@ export default function AdminDashboard() {
     }
   };
 
-  // ==========================================
-  // PROCESSAMENTO DE DADOS E FILTROS
-  // ==========================================
+  const confirmarExclusaoAssinatura = (assinaturaId, nomeCliente) => {
+    showConfirm(
+      'Excluir Assinatura',
+      `Tem certeza que deseja remover a assinatura de ${nomeCliente}? O cliente voltará para a tela de escolha de planos.`,
+      () => efetuarExclusaoAssinatura(assinaturaId)
+    );
+  };
 
-  // Processa Clientes (para as abas Todos, Ativos, Inativos)
+  const efetuarExclusaoAssinatura = async (assinaturaId) => {
+    fecharModal();
+    try {
+      const { error } = await supabase
+        .from('assinaturas')
+        .delete()
+        .eq('id', assinaturaId);
+
+      if (error) throw error;
+      carregarDados();
+      showAlert('Removida', 'A assinatura foi excluída com sucesso.');
+    } catch (error) {
+      showAlert('Erro', 'Não foi possível excluir a assinatura.');
+    }
+  };
+
+  // Funções de formatação com correção de fuso horário
+  const formatarData = (dataStr) => {
+    if (!dataStr) return '--/--';
+    const d = new Date(dataStr);
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  };
+
+  const formatarHora = (dataStr) => {
+    if (!dataStr) return '--:--';
+    const d = new Date(dataStr);
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  };
+
   const mesAtual = new Date().getMonth();
   const anoAtual = new Date().getFullYear();
 
@@ -115,15 +146,11 @@ export default function AdminDashboard() {
     const assinatura = cliente.assinaturas?.[0] || null;
     const planoDetalhe = assinatura ? planosInfo[assinatura.plano_escolhido] : null;
 
-    // Calcula os cortes no mês cruzando com os cortes gerais
     const cortesNoMes = cortesGerais.filter(corte => {
-      // Verifica se o cliente tem cortes e se o objeto clientes existe (mesmo null-safe)
       if (!corte.clientes) return false;
-      
-      const ehDesteCliente = corte.clientes.nome === cliente.nome; // Maneira simples de cruzar já que o Supabase retorna aninhado
+      const ehDesteCliente = corte.clientes.nome === cliente.nome; 
       const dataCorte = new Date(corte.created_at);
       const ehNesteMes = dataCorte.getMonth() === mesAtual && dataCorte.getFullYear() === anoAtual;
-      
       return ehDesteCliente && ehNesteMes;
     }).length;
 
@@ -139,18 +166,11 @@ export default function AdminDashboard() {
   if (abaAtiva === 'ativos') listaClientesFiltrada = listaClientesFiltrada.filter(c => c.assinatura?.status === 'ativa');
   else if (abaAtiva === 'inativos') listaClientesFiltrada = listaClientesFiltrada.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa');
 
-  // Processa Cortes (para a aba Histórico)
   const listaCortesFiltrada = cortesGerais.filter(corte => {
-    // Filtra pelo dia exato escolhido no input date
-    const dataDoCorte = corte.created_at.split('T')[0];
-    return dataDoCorte === dataFiltro;
+    const d = new Date(corte.created_at);
+    const dataLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    return dataLocal === dataFiltro;
   });
-
-  // Funções de formatação
-  const formatarData = (dataStr) => {
-    if (!dataStr) return '--/--';
-    return new Date(dataStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-  };
 
   const getIniciais = (nome) => {
     if (!nome) return '??';
@@ -180,7 +200,6 @@ export default function AdminDashboard() {
         </button>
       </header>
 
-      {/* Só mostra 'Aguardando Ativação' se NÃO estiver na aba de histórico */}
       {abaAtiva !== 'historico' && aguardandoAtivacao.length > 0 && (
         <section className="mb-8">
           <h2 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -193,7 +212,10 @@ export default function AdminDashboard() {
               <div key={cliente.id} className="bg-[#121212] border border-[#27272a] rounded-[20px] p-5 flex justify-between items-center">
                 <div>
                   <h3 className="font-bold text-lg leading-tight">{cliente.nome}</h3>
-                  <p className="text-[#CEAA6B] text-xs font-medium mt-1">WhatsApp: {cliente.whatsapp}</p>
+                  <p className="text-[#CEAA6B] text-[10px] font-bold uppercase mt-1">
+                    {planosInfo[cliente.assinatura.plano_escolhido]?.nome} • Solicitado às {formatarHora(cliente.assinatura.created_at)}
+                  </p>
+                  <p className="text-zinc-500 text-[10px] mt-1">WhatsApp: {cliente.whatsapp}</p>
                 </div>
                 <button 
                   onClick={() => confirmarAtivacao(cliente.assinatura.id, cliente.nome)}
@@ -207,7 +229,6 @@ export default function AdminDashboard() {
         </section>
       )}
 
-      {/* ABAS DE NAVEGAÇÃO ATUALIZADAS COM "HISTÓRICO" */}
       <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide mb-2">
         <button onClick={() => setAbaAtiva('todos')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'todos' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
           Todos ({clientesProcessados.length})
@@ -218,16 +239,12 @@ export default function AdminDashboard() {
         <button onClick={() => setAbaAtiva('inativos')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'inativos' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
           Inativos ({clientesProcessados.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa').length})
         </button>
-        {/* NOVA ABA: HISTÓRICO */}
         <button onClick={() => setAbaAtiva('historico')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'historico' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
           Histórico de Cortes
         </button>
       </div>
 
-      {/* RENDERIZAÇÃO CONDICIONAL: TELA DE CLIENTES OU TELA DE HISTÓRICO */}
       {abaAtiva !== 'historico' ? (
-        
-        // --- TELA DE CLIENTES (Tudo que já existia) ---
         <>
           <div className="relative mb-6">
             <svg className="absolute left-4 top-4 text-zinc-500" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -249,15 +266,24 @@ export default function AdminDashboard() {
                     <div className="w-12 h-12 rounded-full border border-[#27272a] bg-[#09090b] flex items-center justify-center text-zinc-500 font-bold text-sm shrink-0">
                       {getIniciais(cliente.nome)}
                     </div>
-                    
                     <div className="flex-1">
                       <div className="flex justify-between items-start">
                         <h3 className="font-bold text-lg leading-none">{cliente.nome}</h3>
-                        {statusAtivo ? (
-                          <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Ativo</span>
-                        ) : (
-                          <span className="bg-red-500/10 text-red-500 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Inativo</span>
-                        )}
+                        <div className="flex gap-2">
+                          {cliente.assinatura && (
+                            <button 
+                              onClick={() => confirmarExclusaoAssinatura(cliente.assinatura.id, cliente.nome)}
+                              className="p-1.5 text-zinc-600 hover:text-red-500 transition-colors"
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                          )}
+                          {statusAtivo ? (
+                            <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Ativo</span>
+                          ) : (
+                            <span className="bg-red-500/10 text-red-500 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Inativo</span>
+                          )}
+                        </div>
                       </div>
                       <p className="text-zinc-500 text-xs mt-1.5">
                         {cliente.planoDetalhe ? `${cliente.planoDetalhe.limite} Cortes/mês • ${cliente.planoDetalhe.preco}` : 'Nenhum plano escolhido'}
@@ -281,27 +307,24 @@ export default function AdminDashboard() {
 
       ) : (
 
-        // --- NOVA TELA DE HISTÓRICO DE CORTES ---
         <div className="animate-[fadeIn_0.2s_ease-out]">
           
-          {/* O SEGREDO DO CALENDÁRIO ESTÁ AQUI */}
           <div className="flex justify-between items-center mb-6 bg-[#121212] p-4 rounded-2xl border border-[#27272a]">
             <div>
               <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Filtrar por data</p>
               <h2 className="text-[#CEAA6B] font-bold text-lg">
-                {dataFiltro === hojeFormatoInput ? 'Cortes de Hoje' : formatarData(dataFiltro)}
+                {dataFiltro === getHojeLocal() ? 'Cortes de Hoje' : formatarData(dataFiltro)}
               </h2>
             </div>
             
-            {/* O Input de Data Camuflado no Ícone */}
             <div className="relative w-12 h-12 flex items-center justify-center bg-[#09090b] border border-[#27272a] rounded-xl hover:border-[#CEAA6B]/50 transition-colors">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#CEAA6B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-              {/* O input nativo ocupa todo o espaço do botão, mas é invisível. Quando tocado, abre a roleta do celular! */}
               <input 
                 type="date" 
                 value={dataFiltro}
                 onChange={(e) => setDataFiltro(e.target.value)}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                style={{ WebkitAppearance: 'none' }}
               />
             </div>
           </div>
@@ -309,7 +332,7 @@ export default function AdminDashboard() {
           <div className="space-y-3">
             {listaCortesFiltrada.length > 0 ? (
               listaCortesFiltrada.map(corte => {
-                const horaCorte = new Date(corte.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+                const horaCorte = formatarHora(corte.created_at);
                 const nomeCli = corte.clientes?.nome || 'Cliente Desconhecido';
                 
                 return (
