@@ -3,12 +3,32 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import ModalAlerta from "../components/ModalAlerta";
 
+// Garante que o usuário não deslogue ao recarregar a página
+const getClienteId = () => {
+  const id = localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
+  if (id) {
+    localStorage.setItem('clienteId', id);
+    sessionStorage.setItem('clienteId', id);
+  }
+  return id;
+};
+
+// Limpa a sujeira do Supabase (microsegundos) para o iOS/celulares não travarem
+const parseDataSupabase = (dataStr) => {
+  if (!dataStr) return new Date();
+  const dataLimpa = dataStr.split('.')[0].replace(' ', 'T') + 'Z';
+  return new Date(dataLimpa);
+};
+
 export default function ClienteDashboard() {
   const [dados, setDados] = useState(null);
   const [historicoMes, setHistoricoMes] = useState([]);
   const [menuAberto, setMenuAberto] = useState(false);
   const [loading, setLoading] = useState(true);
   const [salvandoCorte, setSalvandoCorte] = useState(false);
+  
+  const [corteCancelavel, setCorteCancelavel] = useState(null);
+  
   const navigate = useNavigate();
 
   const [modalCheckoutAberto, setModalCheckoutAberto] = useState(false);
@@ -30,10 +50,35 @@ export default function ClienteDashboard() {
   const nomesPlanos = { cabelo: 'Só Cabelo', barba: 'Só Barba', completo: 'Cabelo & Barba' };
 
   useEffect(() => {
-    const clienteId = localStorage.getItem('clienteId');
+    const clienteId = getClienteId();
     if (!clienteId) navigate('/');
     else carregarDados(clienteId);
   }, [navigate]);
+
+  // Função matemática simples para checar os 15 minutos (roda a cada 5 segundos para ser imediato)
+  useEffect(() => {
+    const verificarCancelamento = () => {
+      if (historicoMes.length > 0) {
+        const ultimoCorte = historicoMes[0];
+        const dataUltimoCorte = parseDataSupabase(ultimoCorte.created_at).getTime();
+        const agora = new Date().getTime();
+        
+        const diferencaMinutos = (agora - dataUltimoCorte) / 60000;
+        
+        if (diferencaMinutos >= 0 && diferencaMinutos <= 15) {
+          setCorteCancelavel(ultimoCorte);
+        } else {
+          setCorteCancelavel(null);
+        }
+      } else {
+        setCorteCancelavel(null);
+      }
+    };
+
+    verificarCancelamento();
+    const interval = setInterval(verificarCancelamento, 5000);
+    return () => clearInterval(interval);
+  }, [historicoMes]);
 
   async function carregarDados(id) {
     try {
@@ -52,11 +97,11 @@ export default function ClienteDashboard() {
 
       const hoje = new Date();
       const cortesDoMes = cli.historico_cortes?.filter(corte => {
-        const d = new Date(corte.created_at);
+        const d = parseDataSupabase(corte.created_at);
         return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
       }) || [];
       
-      cortesDoMes.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      cortesDoMes.sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
       setHistoricoMes(cortesDoMes);
 
       setDados({
@@ -118,15 +163,29 @@ export default function ClienteDashboard() {
     }
   };
 
+  const cancelarAgendamento = () => {
+    exibirConfirmacao(
+      'Cancelar Agendamento',
+      `Deseja cancelar a mudança agendada e manter seu plano atual (${dados.planoNome})?`,
+      efetuarCancelamentoAgendamento
+    );
+  };
+
+  const efetuarCancelamentoAgendamento = async () => {
+    fecharModalAlerta();
+    const { error } = await supabase.from('assinaturas').update({ proximo_plano: null }).eq('cliente_id', getClienteId());
+    if (!error) carregarDados(getClienteId());
+  };
+
   const efetuarMudancaPlanoDireta = async (novoPlano) => {
-    const { error } = await supabase.from('assinaturas').update({ plano_escolhido: novoPlano }).eq('cliente_id', localStorage.getItem('clienteId'));
-    if (!error) carregarDados(localStorage.getItem('clienteId'));
+    const { error } = await supabase.from('assinaturas').update({ plano_escolhido: novoPlano }).eq('cliente_id', getClienteId());
+    if (!error) carregarDados(getClienteId());
   };
 
   const efetuarAgendamentoDowngrade = async (proximo) => {
     fecharModalAlerta();
-    const { error } = await supabase.from('assinaturas').update({ proximo_plano: proximo }).eq('cliente_id', localStorage.getItem('clienteId'));
-    if (!error) carregarDados(localStorage.getItem('clienteId'));
+    const { error } = await supabase.from('assinaturas').update({ proximo_plano: proximo }).eq('cliente_id', getClienteId());
+    if (!error) carregarDados(getClienteId());
   };
 
   const prepararUpgrade = (planoUpgrade, valorDiferenca) => {
@@ -142,7 +201,7 @@ export default function ClienteDashboard() {
     if (isUpgrade) {
       mensagem += `Estou solicitando o Upgrade para o plano *${nomesPlanos[dados.planoUpgradeId]}*! 🚀\n`;
       mensagem += `Pagamento via: *${metodoPagamento.toUpperCase()}*`;
-      await supabase.from('assinaturas').update({ upgrade_pendente: dados.planoUpgradeId }).eq('cliente_id', localStorage.getItem('clienteId'));
+      await supabase.from('assinaturas').update({ upgrade_pendente: dados.planoUpgradeId }).eq('cliente_id', getClienteId());
     } else {
       mensagem += `Estou solicitando a ativação do *Plano ${dados.planoNome}*.\n`;
       mensagem += `Pagamento via: *${metodoPagamento.toUpperCase()}*`;
@@ -150,14 +209,14 @@ export default function ClienteDashboard() {
     
     window.open(`https://wa.me/${WHATSAPP_JOAO}?text=${encodeURIComponent(mensagem)}`, '_blank');
     setModalCheckoutAberto(false);
-    if (isUpgrade) carregarDados(localStorage.getItem('clienteId'));
+    if (isUpgrade) carregarDados(getClienteId());
   };
 
   const salvarNovoNome = async () => {
     if (!novoNome.trim() || novoNome === dados.nome) return setEditandoNome(false);
     try {
-      await supabase.from('clientes').update({ nome: novoNome, alteracoes_nome: dados.alteracoesNome + 1 }).eq('id', localStorage.getItem('clienteId'));
-      carregarDados(localStorage.getItem('clienteId'));
+      await supabase.from('clientes').update({ nome: novoNome, alteracoes_nome: dados.alteracoesNome + 1 }).eq('id', getClienteId());
+      carregarDados(getClienteId());
       setEditandoNome(false);
     } catch (e) { console.error(e); }
   };
@@ -165,18 +224,67 @@ export default function ClienteDashboard() {
   const handleConfirmarCorte = () => {
     if (dados.status !== 'ativa') return exibirAlerta('Acesso Restrito', 'Sua assinatura precisa estar ATIVA.');
     if (dados.cortesRestantes <= 0) return exibirAlerta('Limite Atingido', 'Cortes esgotados este mês.');
-    exibirConfirmacao('Confirmar Serviço', `Deseja registrar "${dados.planoNome}" agora?`, efetuarCorteNoBanco);
+
+    // Verificação de limite diário (1x por dia)
+    if (historicoMes.length > 0) {
+      const dataUltimoCorte = parseDataSupabase(historicoMes[0].created_at).toLocaleDateString('pt-BR');
+      const dataHoje = new Date().toLocaleDateString('pt-BR');
+
+      if (dataUltimoCorte === dataHoje) {
+        return exibirAlerta('Atenção', 'Você já registrou um corte hoje! Retorne amanhã.');
+      }
+    }
+
+    exibirConfirmacao(
+      'Confirmar Serviço', 
+      `Deseja registrar "${dados.planoNome}" agora? \n\n(Você poderá cancelar este registro em até 15 minutos se necessário).`, 
+      efetuarCorteNoBanco
+    );
   };
 
   const efetuarCorteNoBanco = async () => {
-    fecharModalAlerta(); setSalvandoCorte(true);
+    if (salvandoCorte) return; 
+    setSalvandoCorte(true);
+    
     try {
-      await supabase.from('historico_cortes').insert([{ cliente_id: localStorage.getItem('clienteId'), tipo_corte: dados.planoNome }]);
+      await supabase.from('historico_cortes').insert([{ cliente_id: getClienteId(), tipo_corte: dados.planoNome }]);
+      fecharModalAlerta(); 
       navigate('/confirmado'); 
-    } catch (e) { setSalvandoCorte(false); }
+    } catch (e) { 
+      fecharModalAlerta(); 
+      setSalvandoCorte(false); 
+    }
   };
 
-  if (loading || !dados) return <div className="min-h-screen bg-[#09090b]"></div>;
+  const handleCancelarCorte = () => {
+    exibirConfirmacao(
+      'Cancelar Corte', 
+      'Tem certeza que deseja cancelar? O limite de corte será devolvido à sua conta.', 
+      efetuarCancelamentoCorte
+    );
+  };
+
+  const efetuarCancelamentoCorte = async () => {
+    if (salvandoCorte) return;
+    setSalvandoCorte(true);
+    fecharModalAlerta();
+    
+    try {
+      const { error } = await supabase.from('historico_cortes').delete().eq('id', corteCancelavel.id);
+      if (!error) {
+        await carregarDados(getClienteId());
+        exibirAlerta('Cancelado', 'Seu corte foi cancelado e o limite retornado à sua conta.');
+      } else {
+        exibirAlerta('Erro', 'Não foi possível cancelar. O prazo de 15 minutos pode ter expirado.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSalvandoCorte(false);
+    }
+  };
+
+  if (loading || !dados) return <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-[#CEAA6B] font-bold uppercase tracking-widest text-xs">Carregando...</div>;
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white p-5 font-sans flex flex-col relative overflow-hidden">
@@ -186,7 +294,7 @@ export default function ClienteDashboard() {
       <div className="flex justify-between items-center mb-6 mt-2">
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 bg-[#CEAA6B] rounded-full"></div>
-          <span className="text-[#CEAA6B] text-[10px] font-bold tracking-[0.2em] uppercase">JOAO BARBER</span>
+          <span className="text-[#CEAA6B] text-[10px] font-bold tracking-[0.2em] uppercase">joao barber</span>
         </div>
         <button onClick={() => setMenuAberto(true)} className="w-10 h-10 rounded-full border border-[#CEAA6B]/30 flex items-center justify-center bg-[#121212] text-[#CEAA6B] font-bold text-sm">
           {dados.iniciais}
@@ -243,8 +351,13 @@ export default function ClienteDashboard() {
                 {dados.planoId === p ? <span className="bg-[#CEAA6B] text-black text-[9px] font-black px-2 py-1 rounded">ATUAL</span> : (dados.proximoPlano === p && <span className="text-[8px] text-[#CEAA6B] font-bold uppercase border border-[#CEAA6B]/30 px-2 py-1 rounded">Agendado</span>)}
               </button>
             ))}
+            {dados.proximoPlano && (
+              <button onClick={cancelarAgendamento} className="w-full mt-2 text-zinc-500 text-[10px] font-bold uppercase py-2 hover:text-white transition-colors text-center border border-zinc-800 rounded-xl">
+                Cancelar Agendamento
+              </button>
+            )}
           </div>
-          <button onClick={() => { localStorage.clear(); navigate('/'); }} className="mt-8 py-4 text-red-500 text-xs font-bold uppercase tracking-widest border border-red-500/20 rounded-xl">Sair</button>
+          <button onClick={() => { localStorage.clear(); sessionStorage.clear(); navigate('/'); }} className="mt-8 py-4 text-red-500 text-xs font-bold uppercase tracking-widest border border-red-500/20 rounded-xl">Sair</button>
         </div>
       </div>
 
@@ -292,7 +405,7 @@ export default function ClienteDashboard() {
             <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-[#121212] border border-[#27272a]">
               <div className="flex items-center gap-4">
                 <div className="w-8 h-8 rounded-full bg-[#09090b] flex items-center justify-center text-zinc-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div>
-                <div><p className="text-sm font-medium text-white">{c.tipo_corte}</p><p className="text-[10px] text-zinc-500">{new Date(c.created_at).toLocaleDateString('pt-BR')}</p></div>
+                <div><p className="text-sm font-medium text-white">{c.tipo_corte}</p><p className="text-[10px] text-zinc-500">{parseDataSupabase(c.created_at).toLocaleDateString('pt-BR')}</p></div>
               </div>
               <div className="w-1.5 h-1.5 bg-[#22c55e] rounded-full mr-2"></div>
             </div>
@@ -302,9 +415,15 @@ export default function ClienteDashboard() {
 
       <div className="mt-4">
         {dados.status === 'ativa' ? (
-          <button disabled={dados.cortesRestantes === 0 || salvandoCorte} onClick={handleConfirmarCorte} className="w-full bg-[#CEAA6B] text-black font-bold py-4 rounded-2xl transition-all">
-            {salvandoCorte ? 'Registrando...' : dados.cortesRestantes > 0 ? 'Confirmar Corte' : 'Cortes Esgotados'}
-          </button>
+          corteCancelavel ? (
+            <button disabled={salvandoCorte} onClick={handleCancelarCorte} className="w-full bg-red-500/10 text-red-500 border border-red-500/50 font-bold py-4 rounded-2xl transition-all">
+              {salvandoCorte ? 'Cancelando...' : 'Cancelar Corte (Até 15 min)'}
+            </button>
+          ) : (
+            <button disabled={dados.cortesRestantes === 0 || salvandoCorte} onClick={handleConfirmarCorte} className="w-full bg-[#CEAA6B] text-black font-bold py-4 rounded-2xl transition-all">
+              {salvandoCorte ? 'Registrando...' : dados.cortesRestantes > 0 ? 'Confirmar Corte' : 'Cortes Esgotados'}
+            </button>
+          )
         ) : (
           <button onClick={() => { setDados(prev => ({ ...prev, valorUpgrade: null })); setModalCheckoutAberto(true); }} className="w-full bg-[#CEAA6B] text-black font-bold py-4 rounded-2xl">
             Pagar e Ativar Plano
@@ -312,7 +431,7 @@ export default function ClienteDashboard() {
         )}
       </div>
 
-      {/* MODAL DE CHECKOUT RESTAURADO */}
+      {/* MODAL DE CHECKOUT */}
       {modalCheckoutAberto && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-0">
           <div className="bg-[#121212] border border-[#27272a] rounded-t-[32px] sm:rounded-[32px] w-full max-w-[400px] p-6 pb-10 animate-[slideUp_0.3s_ease-out]">
@@ -352,7 +471,6 @@ export default function ClienteDashboard() {
               </div>
             )}
 
-            {/* BOTÃO DE MUDAR PLANO VOLTOU! */}
             <button onClick={() => { setModalCheckoutAberto(false); setMenuAberto(true); }} className="w-full text-zinc-500 text-xs font-bold uppercase py-2 hover:text-white transition-colors">Escolher outro plano</button>
           </div>
         </div>

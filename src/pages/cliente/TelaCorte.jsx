@@ -4,7 +4,7 @@ import { supabase } from '../../services/supabase';
 
 export default function TelaCorte() {
   const navigate = useNavigate();
-  const [dados, setDados] = useState({ nome: '', cortes: 0, vencimento: '' });
+  const [dados, setDados] = useState({ nome: '', cortes: 0, vencimento: '', tipoCorte: 'Carregando...' });
 
   useEffect(() => {
     carregarDadosValidacao();
@@ -12,28 +12,43 @@ export default function TelaCorte() {
 
   async function carregarDadosValidacao() {
     const id = localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
-    if (!id) return;
+    
+    if (!id) {
+        navigate('/');
+        return;
+    }
 
+    // Busca dados do cliente e assinatura
     const { data: cli } = await supabase
       .from('clientes')
       .select('nome, assinaturas(data_vencimento)')
       .eq('id', id).single();
 
+    // Busca o ÚLTIMO corte para mostrar o tipo e validar se foi hoje
+    const { data: ultimoCorte } = await supabase
+      .from('historico_cortes')
+      .select('tipo_corte, created_at')
+      .eq('cliente_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    // Conta total de cortes do mês para o contador
     const { count } = await supabase
       .from('historico_cortes')
       .select('*', { count: 'exact', head: true })
       .eq('cliente_id', id);
 
     setDados({
-      nome: cli?.nome || 'Marcos Oliveira',
+      nome: cli?.nome || 'Cliente',
       cortes: count || 0,
       vencimento: cli?.assinaturas?.[0]?.data_vencimento 
         ? new Date(cli.assinaturas[0].data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-        : '01/06'
+        : '--/--',
+      tipoCorte: ultimoCorte?.tipo_corte || 'Nenhum corte registrado'
     });
   }
 
-  // Path SVG de uma tesoura de barbeiro aberta
   const scissorsPath = "M9.64,7.64 C9.87,7.14 10,6.59 10,6 C10,3.79 8.21,2 6,2 C3.79,2 2,3.79 2,6 C2,8.21 3.79,10 6,10 C6.59,10 7.14,9.87 7.64,9.64 L10,12 L7.64,14.36 C7.14,14.13 6.59,14 6,14 C3.79,14 2,15.79 2,18 C2,20.21 3.79,22 6,22 C8.21,22 10,20.21 10,18 C10,17.41 9.87,16.86 9.64,16.36 L12,14 L19,21 H22 V20 L9.64,7.64 Z M6,8 C4.9,8 4,7.1 4,6 C4,4.9 4.9,4 6,4 C7.1,4 8,4.9 8,6 C8,7.1 7.1,8 6,8 Z M6,20 C4.9,20 4,19.1 4,18 C4,16.9 4.9,16 6,16 C7.1,16 8,16.9 8,18 C8,19.1 7.1,20 6,20 Z M19,3 L12,10 L14,12 L22,4 V3 H19 Z";
 
   return (
@@ -41,7 +56,7 @@ export default function TelaCorte() {
       
       {/* HEADER */}
       <h2 className="text-[#b67b36] text-[10px] font-medium tracking-[0.25em] uppercase text-center mb-8">
-        Barbearia do João
+        joao barber
       </h2>
 
       {/* CARD PRINCIPAL */}
@@ -50,10 +65,8 @@ export default function TelaCorte() {
         {/* ÁREA DO ÍCONE 3D */}
         <div className="w-24 h-24 bg-[#0b1e11] border-2 border-[#143d21] rounded-full mb-6 flex items-center justify-center shadow-[0_0_20px_inset_rgba(59,248,118,0.1)] overflow-hidden">
           
-          {/* CENA 3D CSS */}
           <div className="scene flex items-center justify-center w-full h-full">
             <div className="scissor-3d w-12 h-12 relative">
-              {/* Empilhamos as camadas da tesoura com a nova cor neon */}
               {[...Array(5)].map((_, i) => (
                 <svg 
                   key={i} 
@@ -91,11 +104,11 @@ export default function TelaCorte() {
         {/* CAIXA DE NOME DO CLIENTE */}
         <div className="w-full bg-[#070c08] border border-[#102115] rounded-xl p-3 flex items-center gap-4 mb-4">
           <div className="w-10 h-10 bg-[#0e351d] rounded-full flex items-center justify-center font-bold text-[#3cf072] text-sm">
-            {dados.nome.substring(0, 2).toUpperCase()}
+            {dados.nome ? dados.nome.substring(0, 2).toUpperCase() : ''}
           </div>
           <div>
             <p className="font-bold text-[15px] text-white tracking-wide">{dados.nome}</p>
-            <p className="text-[11px] text-[#1b8841] font-medium mt-[2px]">Plano 4 Cortes/mês</p>
+            <p className="text-[11px] text-[#3cf072] font-bold uppercase mt-[2px]">{dados.tipoCorte}</p>
           </div>
         </div>
 
@@ -103,7 +116,7 @@ export default function TelaCorte() {
         <div className="grid grid-cols-2 gap-4 w-full">
           <div className="bg-[#070c08] border border-[#102115] p-4 rounded-xl text-center">
             <p className="text-[#16582a] text-[9px] font-bold uppercase tracking-wide mb-2">Cortes Restantes</p>
-            <p className="text-2xl font-bold text-[#3df474]">{4 - dados.cortes} <span className="text-[#197034] text-[11px] font-medium">de 4</span></p>
+            <p className="text-2xl font-bold text-[#3df474]">{Math.max(0, 4 - dados.cortes)} <span className="text-[#197034] text-[11px] font-medium">de 4</span></p>
           </div>
           <div className="bg-[#070c08] border border-[#102115] p-4 rounded-xl text-center">
             <p className="text-[#16582a] text-[9px] font-bold uppercase tracking-wide mb-2">Vencimento</p>
@@ -123,7 +136,6 @@ export default function TelaCorte() {
         </button>
       </div>
 
-      {/* CSS PARA A ANIMAÇÃO 3D DA TESOURA */}
       <style dangerouslySetInnerHTML={{ __html: `
         .scene {
           perspective: 600px;
