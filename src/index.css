@@ -1,3 +1,74 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ==========================================
+   CUSTOMIZAÇÃO DO CALENDÁRIO (DATEPICKER)
+   ========================================== */
+
+/* Fundo geral e borda */
+.react-datepicker {
+  background-color: #121212 !important;
+  border: 1px solid #27272a !important;
+  font-family: inherit !important;
+  border-radius: 16px !important;
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+/* Cabeçalho (onde fica o mês e os dias da semana) */
+.react-datepicker__header {
+  background-color: #09090b !important;
+  border-bottom: 1px solid #27272a !important;
+  padding-top: 12px !important;
+}
+
+/* Título do Mês */
+.react-datepicker__current-month {
+  color: #CEAA6B !important;
+  font-weight: 700 !important;
+  text-transform: capitalize;
+}
+
+/* Nomes dos dias da semana (Seg, Ter, Qua...) */
+.react-datepicker__day-name {
+  color: #71717a !important; /* Cor zinc-500 */
+  font-weight: 700 !important;
+}
+
+/* Dias normais do mês */
+.react-datepicker__day {
+  color: #e4e4e7 !important; /* Cor zinc-200 */
+  border-radius: 8px !important;
+  transition: all 0.2s;
+}
+
+/* Efeito ao passar o mouse nos dias */
+.react-datepicker__day:hover {
+  background-color: #27272a !important;
+  color: #CEAA6B !important;
+}
+
+/* Dia Selecionado */
+.react-datepicker__day--selected, 
+.react-datepicker__day--keyboard-selected {
+  background-color: #CEAA6B !important;
+  color: #000 !important;
+  font-weight: 900 !important;
+}
+
+/* Setas de navegação (Próximo Mês / Mês Anterior) */
+.react-datepicker__navigation-icon::before {
+  border-color: #CEAA6B !important;
+  border-width: 2px 2px 0 0 !important;
+}
+
+/* Esconde aquela setinha (triângulo) branca que fica no topo do calendário */
+.react-datepicker__triangle {
+  display: none !important;
+}
+
+/* Dias do mês anterior/próximo que aparecem em cinza */
+.react-datepicker__day--outside-month {
+  color: #3f3f46 !important; /* Cor zinc-700 */
+}

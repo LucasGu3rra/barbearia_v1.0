@@ -4,7 +4,13 @@ import { supabase } from '../../services/supabase';
 
 export default function TelaCorte() {
   const navigate = useNavigate();
-  const [dados, setDados] = useState({ nome: '', cortes: 0, vencimento: '', tipoCorte: 'Carregando...' });
+  const [dados, setDados] = useState({ 
+    nome: '', 
+    cortes: 0, 
+    vencimento: '', 
+    tipoCorte: 'Carregando...',
+    limiteTotal: 0 // Novo campo para o limite dinâmico
+  });
 
   useEffect(() => {
     carregarDadosValidacao();
@@ -18,13 +24,21 @@ export default function TelaCorte() {
         return;
     }
 
-    // Busca dados do cliente e assinatura
+    // 1. Busca os planos para saber os limites
+    const { data: dadosPlanos } = await supabase.from('planos').select('slug, limite');
+    const mapaLimites = {};
+    dadosPlanos?.forEach(p => { mapaLimites[p.slug] = p.limite; });
+
+    // 2. Busca dados do cliente e assinatura
     const { data: cli } = await supabase
       .from('clientes')
-      .select('nome, assinaturas(data_vencimento)')
+      .select('nome, assinaturas(data_vencimento, plano_escolhido)')
       .eq('id', id).single();
 
-    // Busca o ÚLTIMO corte para mostrar o tipo e validar se foi hoje
+    const assinatura = cli?.assinaturas?.[0];
+    const limiteDoPlano = mapaLimites[assinatura?.plano_escolhido] || 0;
+
+    // 3. Busca o ÚLTIMO corte para mostrar o tipo
     const { data: ultimoCorte } = await supabase
       .from('historico_cortes')
       .select('tipo_corte, created_at')
@@ -33,17 +47,22 @@ export default function TelaCorte() {
       .limit(1)
       .single();
 
-    // Conta total de cortes do mês para o contador
+    // 4. Conta total de cortes do mês atual para o contador
+    const hoje = new Date();
+    const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString();
+
     const { count } = await supabase
       .from('historico_cortes')
       .select('*', { count: 'exact', head: true })
-      .eq('cliente_id', id);
+      .eq('cliente_id', id)
+      .gte('created_at', primeiroDiaMes);
 
     setDados({
       nome: cli?.nome || 'Cliente',
       cortes: count || 0,
-      vencimento: cli?.assinaturas?.[0]?.data_vencimento 
-        ? new Date(cli.assinaturas[0].data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+      limiteTotal: limiteDoPlano,
+      vencimento: assinatura?.data_vencimento 
+        ? new Date(assinatura.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
         : '--/--',
       tipoCorte: ultimoCorte?.tipo_corte || 'Nenhum corte registrado'
     });
@@ -54,17 +73,13 @@ export default function TelaCorte() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center pt-10 pb-8 px-5 font-sans relative">
       
-      {/* HEADER */}
       <h2 className="text-[#b67b36] text-[10px] font-medium tracking-[0.25em] uppercase text-center mb-8">
         joao barber
       </h2>
 
-      {/* CARD PRINCIPAL */}
       <div className="w-full max-w-[340px] bg-[#08100a] border border-[#1bc64d] rounded-[24px] p-6 flex flex-col items-center shadow-[0_0_30px_-10px_rgba(27,198,77,0.15)]">
         
-        {/* ÁREA DO ÍCONE 3D */}
         <div className="w-24 h-24 bg-[#0b1e11] border-2 border-[#143d21] rounded-full mb-6 flex items-center justify-center shadow-[0_0_20px_inset_rgba(59,248,118,0.1)] overflow-hidden">
-          
           <div className="scene flex items-center justify-center w-full h-full">
             <div className="scissor-3d w-12 h-12 relative">
               {[...Array(5)].map((_, i) => (
@@ -77,20 +92,13 @@ export default function TelaCorte() {
                     filter: i === 0 || i === 4 ? 'drop-shadow(0 0 4px #3bf876)' : 'none'
                   }}
                 >
-                  <path 
-                    d={scissorsPath} 
-                    fill="none" 
-                    stroke="#3bf876" 
-                    strokeWidth="0.8" 
-                    className="opacity-80"
-                  />
+                  <path d={scissorsPath} fill="none" stroke="#3bf876" strokeWidth="0.8" className="opacity-80" />
                 </svg>
               ))}
             </div>
           </div>
         </div>
 
-        {/* TEXTOS CENTRAIS */}
         <p className="text-[#22a04c] text-[11px] font-bold uppercase tracking-[0.1em] mb-1">
           Mensalidade em dia
         </p>
@@ -101,7 +109,6 @@ export default function TelaCorte() {
           Pode fazer o corte!
         </p>
         
-        {/* CAIXA DE NOME DO CLIENTE */}
         <div className="w-full bg-[#070c08] border border-[#102115] rounded-xl p-3 flex items-center gap-4 mb-4">
           <div className="w-10 h-10 bg-[#0e351d] rounded-full flex items-center justify-center font-bold text-[#3cf072] text-sm">
             {dados.nome ? dados.nome.substring(0, 2).toUpperCase() : ''}
@@ -112,11 +119,13 @@ export default function TelaCorte() {
           </div>
         </div>
 
-        {/* CAIXAS DE DADOS GRID */}
         <div className="grid grid-cols-2 gap-4 w-full">
           <div className="bg-[#070c08] border border-[#102115] p-4 rounded-xl text-center">
             <p className="text-[#16582a] text-[9px] font-bold uppercase tracking-wide mb-2">Cortes Restantes</p>
-            <p className="text-2xl font-bold text-[#3df474]">{Math.max(0, 4 - dados.cortes)} <span className="text-[#197034] text-[11px] font-medium">de 4</span></p>
+            <p className="text-2xl font-bold text-[#3df474]">
+              {Math.max(0, dados.limiteTotal - dados.cortes)} 
+              <span className="text-[#197034] text-[11px] font-medium ml-1">de {dados.limiteTotal}</span>
+            </p>
           </div>
           <div className="bg-[#070c08] border border-[#102115] p-4 rounded-xl text-center">
             <p className="text-[#16582a] text-[9px] font-bold uppercase tracking-wide mb-2">Vencimento</p>
@@ -125,7 +134,6 @@ export default function TelaCorte() {
         </div>
       </div>
 
-      {/* RODAPÉ E BOTÃO CAMUFLADOS */}
       <div className="mt-8 mb-6 text-center">
         <p className="text-[#2a2a2a] text-[11px] font-medium mb-6">Mostre esta tela ao barbeiro</p>
         <button 
@@ -137,13 +145,8 @@ export default function TelaCorte() {
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
-        .scene {
-          perspective: 600px;
-        }
-        .scissor-3d {
-          transform-style: preserve-3d;
-          animation: spin3D 4s linear infinite;
-        }
+        .scene { perspective: 600px; }
+        .scissor-3d { transform-style: preserve-3d; animation: spin3D 4s linear infinite; }
         @keyframes spin3D {
           0% { transform: rotateX(-15deg) rotateY(0deg) rotateZ(10deg); }
           100% { transform: rotateX(-15deg) rotateY(360deg) rotateZ(10deg); }

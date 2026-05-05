@@ -46,8 +46,9 @@ export default function ClienteDashboard() {
     isOpen: false, type: 'alert', title: '', message: '', onConfirm: null 
   });
 
-  const precos = { cabelo: 80, barba: 60, completo: 130 };
-  const nomesPlanos = { cabelo: 'Só Cabelo', barba: 'Só Barba', completo: 'Cabelo & Barba' };
+  // ESTADO PARA ARMAZENAR OS PLANOS VINDOS DO BANCO
+  const [planosDb, setPlanosDb] = useState([]);
+  const [mapaPlanos, setMapaPlanos] = useState({});
 
   useEffect(() => {
     const clienteId = getClienteId();
@@ -55,7 +56,6 @@ export default function ClienteDashboard() {
     else carregarDados(clienteId);
   }, [navigate]);
 
-  // Função matemática simples para checar os 15 minutos (roda a cada 5 segundos para ser imediato)
   useEffect(() => {
     const verificarCancelamento = () => {
       if (historicoMes.length > 0) {
@@ -82,6 +82,19 @@ export default function ClienteDashboard() {
 
   async function carregarDados(id) {
     try {
+      // 1. BUSCA OS PLANOS ATUALIZADOS DO BANCO
+      const { data: dadosPlanos, error: errPlanos } = await supabase
+        .from('planos')
+        .select('*');
+      
+      if (errPlanos) throw errPlanos;
+
+      const mapa = {};
+      dadosPlanos.forEach(p => { mapa[p.slug] = p; });
+      setPlanosDb(dadosPlanos);
+      setMapaPlanos(mapa);
+
+      // 2. BUSCA DADOS DO CLIENTE
       const { data: cli, error: erroSupabase } = await supabase
         .from('clientes')
         .select(`
@@ -104,17 +117,22 @@ export default function ClienteDashboard() {
       cortesDoMes.sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
       setHistoricoMes(cortesDoMes);
 
+      // PEGA O LIMITE DO PLANO ESCOLHIDO NO BANCO
+      const planoInfo = mapa[ass.plano_escolhido];
+      const limitePlano = planoInfo?.limite || 4;
+
       setDados({
         nome: cli.nome, 
         whatsapp: cli.whatsapp, 
         iniciais: cli.nome.substring(0, 2).toUpperCase(),
         alteracoesNome: cli.alteracoes_nome || 0,
         status: ass.status || 'pendente', 
-        cortesRestantes: Math.max(0, 4 - cortesDoMes.length),
+        limiteTotal: limitePlano,
+        cortesRestantes: Math.max(0, limitePlano - cortesDoMes.length),
         vencimentoFormatado: ass.data_vencimento ? new Date(ass.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '--/--',
         planoId: ass.plano_escolhido, 
-        planoNome: nomesPlanos[ass.plano_escolhido],
-        precoPlano: precos[ass.plano_escolhido],
+        planoNome: planoInfo?.nome || 'Plano',
+        precoPlano: planoInfo?.preco || 0,
         proximoPlano: ass.proximo_plano,
         upgradePendente: ass.upgrade_pendente
       });
@@ -144,20 +162,20 @@ export default function ClienteDashboard() {
       return;
     }
 
-    const valorNovo = precos[novoPlanoId];
-    const valorAtual = precos[dados.planoId];
+    const valorNovo = mapaPlanos[novoPlanoId].preco;
+    const valorAtual = mapaPlanos[dados.planoId].preco;
 
     if (valorNovo < valorAtual) {
       exibirConfirmacao(
         'Agendar Mudança',
-        `Você já possui o plano ${dados.planoNome} ativo. A mudança para ${nomesPlanos[novoPlanoId]} será agendada para seu próximo vencimento (${dados.vencimentoFormatado}).`,
+        `Você já possui o plano ${dados.planoNome} ativo. A mudança para ${mapaPlanos[novoPlanoId].nome} será agendada para seu próximo vencimento (${dados.vencimentoFormatado}).`,
         () => efetuarAgendamentoDowngrade(novoPlanoId)
       );
     } else {
       const diferenca = valorNovo - valorAtual;
       exibirConfirmacao(
         'Fazer Upgrade',
-        `Deseja mudar para ${nomesPlanos[novoPlanoId]}? Pague apenas a diferença de R$ ${diferenca},00 para liberar hoje mesmo.`,
+        `Deseja mudar para ${mapaPlanos[novoPlanoId].nome}? Pague apenas a diferença de R$ ${diferenca},00 para liberar hoje mesmo.`,
         () => prepararUpgrade(novoPlanoId, diferenca)
       );
     }
@@ -199,7 +217,7 @@ export default function ClienteDashboard() {
     let mensagem = `Olá João! Me chamo *${dados.nome}*.\n`;
     
     if (isUpgrade) {
-      mensagem += `Estou solicitando o Upgrade para o plano *${nomesPlanos[dados.planoUpgradeId]}*! 🚀\n`;
+      mensagem += `Estou solicitando o Upgrade para o plano *${mapaPlanos[dados.planoUpgradeId].nome}*! 🚀\n`;
       mensagem += `Pagamento via: *${metodoPagamento.toUpperCase()}*`;
       await supabase.from('assinaturas').update({ upgrade_pendente: dados.planoUpgradeId }).eq('cliente_id', getClienteId());
     } else {
@@ -225,27 +243,18 @@ export default function ClienteDashboard() {
     if (dados.status !== 'ativa') return exibirAlerta('Acesso Restrito', 'Sua assinatura precisa estar ATIVA.');
     if (dados.cortesRestantes <= 0) return exibirAlerta('Limite Atingido', 'Cortes esgotados este mês.');
 
-    // Verificação de limite diário (1x por dia)
     if (historicoMes.length > 0) {
       const dataUltimoCorte = parseDataSupabase(historicoMes[0].created_at).toLocaleDateString('pt-BR');
       const dataHoje = new Date().toLocaleDateString('pt-BR');
-
-      if (dataUltimoCorte === dataHoje) {
-        return exibirAlerta('Atenção', 'Você já registrou um corte hoje! Retorne amanhã.');
-      }
+      if (dataUltimoCorte === dataHoje) return exibirAlerta('Atenção', 'Você já registrou um corte hoje! Retorne amanhã.');
     }
 
-    exibirConfirmacao(
-      'Confirmar Serviço', 
-      `Deseja registrar "${dados.planoNome}" agora? \n\n(Você poderá cancelar este registro em até 15 minutos se necessário).`, 
-      efetuarCorteNoBanco
-    );
+    exibirConfirmacao('Confirmar Serviço', `Deseja registrar "${dados.planoNome}" agora? \n\n(Você poderá cancelar este registro em até 15 minutos se necessário).`, efetuarCorteNoBanco);
   };
 
   const efetuarCorteNoBanco = async () => {
     if (salvandoCorte) return; 
     setSalvandoCorte(true);
-    
     try {
       await supabase.from('historico_cortes').insert([{ cliente_id: getClienteId(), tipo_corte: dados.planoNome }]);
       fecharModalAlerta(); 
@@ -257,18 +266,13 @@ export default function ClienteDashboard() {
   };
 
   const handleCancelarCorte = () => {
-    exibirConfirmacao(
-      'Cancelar Corte', 
-      'Tem certeza que deseja cancelar? O limite de corte será devolvido à sua conta.', 
-      efetuarCancelamentoCorte
-    );
+    exibirConfirmacao('Cancelar Corte', 'Tem certeza que deseja cancelar? O limite de corte será devolvido à sua conta.', efetuarCancelamentoCorte);
   };
 
   const efetuarCancelamentoCorte = async () => {
     if (salvandoCorte) return;
     setSalvandoCorte(true);
     fecharModalAlerta();
-    
     try {
       const { error } = await supabase.from('historico_cortes').delete().eq('id', corteCancelavel.id);
       if (!error) {
@@ -277,11 +281,7 @@ export default function ClienteDashboard() {
       } else {
         exibirAlerta('Erro', 'Não foi possível cancelar. O prazo de 15 minutos pode ter expirado.');
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSalvandoCorte(false);
-    }
+    } catch (e) { console.error(e); } finally { setSalvandoCorte(false); }
   };
 
   if (loading || !dados) return <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-[#CEAA6B] font-bold uppercase tracking-widest text-xs">Carregando...</div>;
@@ -342,13 +342,13 @@ export default function ClienteDashboard() {
 
           <h3 className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-3">Trocar Meu Plano</h3>
           <div className="space-y-2 mb-auto overflow-y-auto">
-            {Object.keys(precos).map(p => (
-              <button key={p} onClick={() => alterarPlano(p)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center transition-all ${dados.planoId === p ? 'border-[#CEAA6B] bg-[#1a120b]' : 'border-[#27272a] bg-[#121212]'}`}>
+            {planosDb.map(p => (
+              <button key={p.id} onClick={() => alterarPlano(p.slug)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center transition-all ${dados.planoId === p.slug ? 'border-[#CEAA6B] bg-[#1a120b]' : 'border-[#27272a] bg-[#121212]'}`}>
                 <div>
-                  <p className={`font-bold text-sm ${dados.planoId === p ? 'text-[#CEAA6B]' : 'text-white'}`}>{nomesPlanos[p]}</p>
-                  <p className="text-[10px] text-zinc-500">R$ {precos[p]}/mês</p>
+                  <p className={`font-bold text-sm ${dados.planoId === p.slug ? 'text-[#CEAA6B]' : 'text-white'}`}>{p.nome}</p>
+                  <p className="text-[10px] text-zinc-500">R$ {p.preco}/mês</p>
                 </div>
-                {dados.planoId === p ? <span className="bg-[#CEAA6B] text-black text-[9px] font-black px-2 py-1 rounded">ATUAL</span> : (dados.proximoPlano === p && <span className="text-[8px] text-[#CEAA6B] font-bold uppercase border border-[#CEAA6B]/30 px-2 py-1 rounded">Agendado</span>)}
+                {dados.planoId === p.slug ? <span className="bg-[#CEAA6B] text-black text-[9px] font-black px-2 py-1 rounded">ATUAL</span> : (dados.proximoPlano === p.slug && <span className="text-[8px] text-[#CEAA6B] font-bold uppercase border border-[#CEAA6B]/30 px-2 py-1 rounded">Agendado</span>)}
               </button>
             ))}
             {dados.proximoPlano && (
@@ -372,7 +372,7 @@ export default function ClienteDashboard() {
             </span>
           </div>
           <p className="text-zinc-400 text-[12px] leading-relaxed">
-            {dados.upgradePendente ? `Aguardando aprovação do upgrade para ${nomesPlanos[dados.upgradePendente]}.` : 'Efetue o pagamento para liberar seu acesso.'}
+            {dados.upgradePendente ? `Aguardando aprovação do upgrade para ${mapaPlanos[dados.upgradePendente]?.nome}.` : 'Efetue o pagamento para liberar seu acesso.'}
           </p>
         </div>
       )}
@@ -389,8 +389,12 @@ export default function ClienteDashboard() {
       <div className="grid grid-cols-2 gap-3 mb-6">
         <div className="bg-[#121212] border border-[#27272a] p-4 rounded-[20px] flex flex-col items-center">
           <p className="text-zinc-500 text-[8px] font-bold uppercase tracking-widest mb-3">Cortes Restantes</p>
-          <div className="flex gap-1.5 mb-2">{[...Array(4)].map((_, i) => <div key={i} className={`w-4 h-4 rounded-[3px] ${i < dados.cortesRestantes ? 'bg-[#CEAA6B]' : 'bg-[#27272a]'}`}></div>)}</div>
-          <p className="text-2xl font-bold text-[#CEAA6B]">{dados.cortesRestantes} <span className="text-zinc-500 text-[10px] font-normal">de 4</span></p>
+          <div className="flex flex-wrap justify-center gap-1.5 mb-2">
+            {[...Array(dados.limiteTotal)].map((_, i) => (
+              <div key={i} className={`w-3.5 h-3.5 rounded-[3px] ${i < dados.cortesRestantes ? 'bg-[#CEAA6B]' : 'bg-[#27272a]'}`}></div>
+            ))}
+          </div>
+          <p className="text-2xl font-bold text-[#CEAA6B]">{dados.cortesRestantes} <span className="text-zinc-500 text-[10px] font-normal">de {dados.limiteTotal}</span></p>
         </div>
         <div className="bg-[#121212] border border-[#27272a] p-4 rounded-[20px] flex flex-col items-center justify-center">
           <p className="text-zinc-500 text-[8px] font-bold uppercase tracking-widest mb-2">Vencimento</p>
@@ -439,7 +443,7 @@ export default function ClienteDashboard() {
               <div>
                 <h3 className="text-xl font-bold text-white mb-1">Pagamento</h3>
                 <p className="text-[#CEAA6B] font-bold">
-                  {dados.valorUpgrade ? `Upgrade para ${nomesPlanos[dados.planoUpgradeId]}` : `Plano ${dados.planoNome}`} 
+                  {dados.valorUpgrade ? `Upgrade para ${mapaPlanos[dados.planoUpgradeId]?.nome}` : `Plano ${dados.planoNome}`} 
                   • R$ {dados.valorUpgrade || dados.precoPlano},00
                 </p>
               </div>
