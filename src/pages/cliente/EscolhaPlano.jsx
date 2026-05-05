@@ -17,11 +17,28 @@ export default function EscolhaPlano() {
   const CHAVE_PIX = "81988468182";
   const WHATSAPP_JOAO = "5581988468182"; 
 
-  const planos = [
-    { id: 'cabelo', nome: 'Só Cabelo', preco: '80', desc: '4 cortes de cabelo por mês' },
-    { id: 'barba', nome: 'Só Barba', preco: '60', desc: '4 barbas completas por mês' },
-    { id: 'completo', nome: 'Cabelo & Barba', preco: '130', desc: '4 combos completos por mês' }
-  ];
+  const [planos, setPlanos] = useState([]);
+  const [carregandoPlanos, setCarregandoPlanos] = useState(true);
+
+  useEffect(() => {
+    const buscarPlanos = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('planos')
+          .select('*')
+          .eq('ativo', true)
+          .order('preco', { ascending: true }); // Ordena do mais barato para o mais caro
+        
+        if (error) throw error;
+        setPlanos(data || []);
+      } catch (error) {
+        console.error("Erro ao carregar planos:", error);
+      } finally {
+        setCarregandoPlanos(false);
+      }
+    };
+    buscarPlanos();
+  }, []);
 
   // Puxa o nome do cliente ao abrir a tela para usarmos na mensagem do Zap
   useEffect(() => {
@@ -52,7 +69,7 @@ export default function EscolhaPlano() {
     const clienteId = localStorage.getItem('clienteId');
     if (!clienteId) return navigate('/');
 
-    setLoadingId(planoSelecionado.id);
+    setLoadingId(planoSelecionado.slug);
     setModalAberto(false);
 
     try {
@@ -60,9 +77,9 @@ export default function EscolhaPlano() {
       const { data: assinaturaExistente } = await supabase.from('assinaturas').select('*').eq('cliente_id', clienteId).maybeSingle();
 
       if (assinaturaExistente) {
-        await supabase.from('assinaturas').update({ plano_escolhido: planoSelecionado.id, status: 'pendente' }).eq('cliente_id', clienteId);
+        await supabase.from('assinaturas').update({ plano_escolhido: planoSelecionado.slug, status: 'pendente' }).eq('cliente_id', clienteId);
       } else {
-        await supabase.from('assinaturas').insert([{ cliente_id: clienteId, plano_escolhido: planoSelecionado.id, status: 'pendente' }]);
+        await supabase.from('assinaturas').insert([{ cliente_id: clienteId, plano_escolhido: planoSelecionado.slug, status: 'pendente' }]);
       }
 
       // 2. Monta a mensagem inteligente para o WhatsApp
@@ -99,9 +116,12 @@ export default function EscolhaPlano() {
       </header>
 
       <div className="w-full max-w-[360px] space-y-4">
-        {planos.map((plano) => (
+        {carregandoPlanos ? (
+          <div className="text-center text-[#CEAA6B] animate-pulse py-10">Carregando planos...</div>
+        ) : (
+          planos.map((plano) => (
           <button
-            key={plano.id}
+            key={plano.slug}
             onClick={() => abrirCheckout(plano)}
             disabled={loadingId !== null}
             className={`w-full bg-[#121212] border border-[#27272a] p-6 rounded-[24px] text-left transition-all group ${loadingId !== null ? 'opacity-50 cursor-not-allowed' : 'hover:border-[#CEAA6B]/50 active:scale-[0.98]'}`}
@@ -109,13 +129,12 @@ export default function EscolhaPlano() {
             <div className="flex justify-between items-center mb-1">
               <span className="font-bold text-lg group-hover:text-[#CEAA6B] transition-colors">{plano.nome}</span>
               <span className="text-[#CEAA6B] font-black text-lg">
-                {loadingId === plano.id ? <span className="text-sm animate-pulse">Salvando...</span> : <>R$ {plano.preco}<small className="text-[10px] text-zinc-600 ml-1 uppercase">/mês</small></>}
+                {loadingId === plano.slug ? <span className="text-sm animate-pulse">Salvando...</span> : <>R$ {plano.preco}<small className="text-[10px] text-zinc-600 ml-1 uppercase">/mês</small></>}
               </span>
             </div>
-            <p className="text-zinc-500 text-xs font-medium">{plano.desc}</p>
+            <p className="text-zinc-500 text-xs font-medium">{plano.limite} cortes por mês</p>
           </button>
-        ))}
-      </div>
+        )))}  </div>
 
       <div className="mt-auto pt-8 mb-6 text-center">
         <p className="text-zinc-600 text-[10px] uppercase tracking-[0.2em] leading-relaxed">

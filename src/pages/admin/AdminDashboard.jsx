@@ -1,34 +1,43 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import ModalAlerta from "../components/ModalAlerta";
+import ModalPlanos from "../components/ModalPlanos";
+import DrawerAdmin from "./DrawerAdmin";
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { ptBR } from 'date-fns/locale';
+
+// Botão customizado que disfarça o input para enganar o celular e não abrir o teclado
+const CustomDateInput = forwardRef(({ value, onClick }, ref) => (
+  <button
+    type="button"
+    className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-3 py-2 text-white text-sm font-medium outline-none focus:border-[#CEAA6B]/50 transition-colors cursor-pointer text-center"
+    onClick={onClick}
+    ref={ref}
+  >
+    {value}
+  </button>
+));
 
 export default function AdminDashboard() {
   const [clientes, setClientes] = useState([]);
   const [cortesGerais, setCortesGerais] = useState([]); 
   const [loading, setLoading] = useState(true);
+  const [planosInfo, setPlanosInfo] = useState({});
   
   const [abaAtiva, setAbaAtiva] = useState('todos'); 
   const [busca, setBusca] = useState('');
   
-  // Ajuste de fuso horário para o valor inicial do input date
-  const getHojeLocal = () => {
-    const d = new Date();
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-  };
-  const [dataFiltro, setDataFiltro] = useState(getHojeLocal());
+  const [dataFiltro, setDataFiltro] = useState(new Date());
 
   const [modalConfig, setModalConfig] = useState({ 
     isOpen: false, type: 'alert', title: '', message: '', onConfirm: null 
   });
 
   const navigate = useNavigate();
-
-  const planosInfo = {
-    cabelo: { nome: 'Só Cabelo', limite: 4, preco: 'R$ 70/mês' },
-    barba: { nome: 'Só Barba', limite: 4, preco: 'R$ 50/mês' },
-    completo: { nome: 'Cabelo & Barba', limite: 4, preco: 'R$ 110/mês' }
-  };
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [modalPlanosAberto, setModalPlanosAberto] = useState(false);
 
   const fecharModal = () => setModalConfig({ ...modalConfig, isOpen: false });
   const showConfirm = (title, message, acao) => setModalConfig({ isOpen: true, type: 'confirm', title, message, onConfirm: acao });
@@ -36,6 +45,23 @@ export default function AdminDashboard() {
 
   const carregarDados = async () => {
     try {
+      // Busca os planos direto do banco
+      const { data: dadosPlanos, error: errPlanos } = await supabase
+        .from('planos')
+        .select('*');
+      
+      if (errPlanos) throw errPlanos;
+
+      const mapaPlanos = {};
+      dadosPlanos?.forEach(p => {
+        mapaPlanos[p.slug] = { 
+          nome: p.nome, 
+          limite: p.limite, 
+          preco: `R$ ${Number(p.preco).toFixed(2).replace('.', ',')}/mês` 
+        };
+      });
+      setPlanosInfo(mapaPlanos);
+
       const { data: dadosClientes, error: errClientes } = await supabase
         .from('clientes')
         .select(`
@@ -126,7 +152,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Funções de formatação com correção de fuso horário
   const formatarData = (dataStr) => {
     if (!dataStr) return '--/--';
     const d = new Date(dataStr);
@@ -167,9 +192,11 @@ export default function AdminDashboard() {
   else if (abaAtiva === 'inativos') listaClientesFiltrada = listaClientesFiltrada.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa');
 
   const listaCortesFiltrada = cortesGerais.filter(corte => {
+    if (!dataFiltro) return true; 
     const d = new Date(corte.created_at);
-    const dataLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-    return dataLocal === dataFiltro;
+    return d.getDate() === dataFiltro.getDate() && 
+           d.getMonth() === dataFiltro.getMonth() && 
+           d.getFullYear() === dataFiltro.getFullYear();
   });
 
   const getIniciais = (nome) => {
@@ -184,6 +211,18 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-[#09090b] text-white p-6 font-sans pb-20">
       
+      <DrawerAdmin 
+  isOpen={drawerOpen} 
+  onClose={() => setDrawerOpen(false)} 
+  onOpenPlanos={() => setModalPlanosAberto(true)}
+  onLogout={handleLogout} // Adicione esta linha aqui
+/>
+      <ModalPlanos 
+        isOpen={modalPlanosAberto} 
+        onClose={() => setModalPlanosAberto(false)} 
+        onRefresh={carregarDados}
+      />
+
       <ModalAlerta 
         isOpen={modalConfig.isOpen} 
         onClose={fecharModal} 
@@ -194,9 +233,9 @@ export default function AdminDashboard() {
       />
 
       <header className="flex justify-between items-center mb-8 mt-4">
-        <h1 className="text-[#CEAA6B] font-black text-xl tracking-widest uppercase">Painel do João</h1>
-        <button onClick={handleLogout} className="w-10 h-10 rounded-full border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        <h1 className="text-[#CEAA6B] font-black text-xl tracking-widest uppercase">Painel ADMIN</h1>
+        <button onClick={() => setDrawerOpen(true)} className="w-10 h-10 rounded-full border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
       </header>
 
@@ -213,7 +252,7 @@ export default function AdminDashboard() {
                 <div>
                   <h3 className="font-bold text-lg leading-tight">{cliente.nome}</h3>
                   <p className="text-[#CEAA6B] text-[10px] font-bold uppercase mt-1">
-                    {planosInfo[cliente.assinatura.plano_escolhido]?.nome} • Solicitado às {formatarHora(cliente.assinatura.created_at)}
+                    {planosInfo[cliente.assinatura.plano_escolhido]?.nome || 'Plano Antigo'} • Solicitado às {formatarHora(cliente.assinatura.created_at)}
                   </p>
                   <p className="text-zinc-500 text-[10px] mt-1">WhatsApp: {cliente.whatsapp}</p>
                 </div>
@@ -313,18 +352,19 @@ export default function AdminDashboard() {
             <div>
               <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Filtrar por data</p>
               <h2 className="text-[#CEAA6B] font-bold text-lg">
-                {dataFiltro === getHojeLocal() ? 'Cortes de Hoje' : formatarData(dataFiltro)}
+                {dataFiltro && dataFiltro.toDateString() === new Date().toDateString() ? 'Cortes de Hoje' : formatarData(dataFiltro)}
               </h2>
             </div>
             
-            <div className="relative w-12 h-12 flex items-center justify-center bg-[#09090b] border border-[#27272a] rounded-xl hover:border-[#CEAA6B]/50 transition-colors">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#CEAA6B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-              <input 
-                type="date" 
-                value={dataFiltro}
-                onChange={(e) => setDataFiltro(e.target.value)}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                style={{ WebkitAppearance: 'none' }}
+            <div className="relative w-full ml-4 max-w-[150px]">
+              <DatePicker 
+                selected={dataFiltro}
+                onChange={(date) => setDataFiltro(date)}
+                locale={ptBR}
+                dateFormat="dd/MM/yyyy"
+                withPortal
+                customInput={<CustomDateInput />}
+                wrapperClassName="w-full"
               />
             </div>
           </div>
