@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import ModalAlerta from "../components/ModalAlerta";
+import { useAuth } from '../../contexts/AuthContext';
 
 // Garante que o usuário não deslogue ao recarregar a página
 const getClienteId = () => {
@@ -21,6 +22,7 @@ const parseDataSupabase = (dataStr) => {
 };
 
 export default function ClienteDashboard() {
+  const { loading: authLoading } = useAuth();
   const [dados, setDados] = useState(null);
   const [historicoMes, setHistoricoMes] = useState([]);
   const [menuAberto, setMenuAberto] = useState(false);
@@ -50,11 +52,17 @@ export default function ClienteDashboard() {
   const [planosDb, setPlanosDb] = useState([]);
   const [mapaPlanos, setMapaPlanos] = useState({});
 
-  useEffect(() => {
+ useEffect(() => {
+    // 👈 Só prossegue quando o AuthContext terminar de carregar a sessão do Supabase
+    if (authLoading) return; 
+
     const clienteId = getClienteId();
-    if (!clienteId) navigate('/');
-    else carregarDados(clienteId);
-  }, [navigate]);
+    if (!clienteId) {
+      navigate('/');
+    } else {
+      carregarDados(clienteId);
+    }
+  }, [navigate, authLoading]); // 👈 Adicione o authLoading nas dependências
 
   useEffect(() => {
     const verificarCancelamento = () => {
@@ -357,7 +365,20 @@ export default function ClienteDashboard() {
               </button>
             )}
           </div>
-          <button onClick={() => { localStorage.clear(); sessionStorage.clear(); navigate('/'); }} className="mt-8 py-4 text-red-500 text-xs font-bold uppercase tracking-widest border border-red-500/20 rounded-xl">Sair</button>
+          <button 
+            onClick={async () => { 
+              // 1. Avisa o Supabase para deslogar de verdade
+              await supabase.auth.signOut(); 
+              // 2. Limpa o cache
+              localStorage.clear(); 
+              sessionStorage.clear(); 
+              // 3. Joga pro login
+              navigate('/'); 
+            }} 
+            className="mt-8 py-4 text-red-500 text-xs font-bold uppercase tracking-widest border border-red-500/20 rounded-xl"
+          >
+            Sair
+          </button>
         </div>
       </div>
 

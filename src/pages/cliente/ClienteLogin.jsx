@@ -10,35 +10,25 @@ export default function ClienteLogin() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
+const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password: senha,
       });
 
       if (authError) throw new Error('E-mail ou senha incorretos.');
 
-      const userId = authData.user.id;
-
-      const { data: cliente, error: clienteError } = await supabase
-        .from('clientes')
-        .select('eh_admin')
-        .eq('id', userId)
-        .single();
-
-      if (clienteError) throw new Error('Dados do usuário não encontrados.');
-
-      localStorage.setItem('clienteId', userId);
-      navigate(cliente.eh_admin ? '/admin/dashboard' : '/dashboard');
+      // APAGAMOS TODO O RESTO! Não coloque "navigate" aqui.
+      // Quando o signIn for um sucesso, o AuthContext percebe sozinho, 
+      // faz a checagem no banco e o App.jsx te redireciona automaticamente!
 
     } catch (error) {
       alert(error.message);
-    } finally {
-      setLoading(false);
+      setLoading(false); // Só volta o botão ao normal se der erro
     }
   };
 
