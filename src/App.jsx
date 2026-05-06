@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './pages/components/ProtectedRoute';
 
 // Páginas do Cliente
@@ -15,13 +15,36 @@ import TelaBloqueio from './pages/cliente/TelaBloqueio';
 // Páginas do Admin
 import AdminDashboard from './pages/admin/AdminDashboard';
 
+// Componente para gerenciar a rota inicial "/"
+// Ele decide se manda para o Login ou para o Dashboard correto
+const InitialRoute = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) return null; // Espera o Supabase carregar
+
+  if (user) {
+    // Se estiver logado, verifica se é admin pelo email ou metadados
+    // (Ajuste a lógica abaixo se você tiver um campo específico no banco)
+    const isAdmin = user.email === 'seu-email-admin@gmail.com' || user.user_metadata?.role === 'admin';
+    
+    if (isAdmin) {
+      return <Navigate to="/admin/dashboard" replace />;
+    }
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <ClienteLogin />;
+};
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* Rota Inicial Inteligente */}
+          <Route path="/" element={<InitialRoute />} />
+          
           {/* Fluxo de Entrada (Público) */}
-          <Route path="/" element={<ClienteLogin />} />
           <Route path="/cadastro" element={<ClienteCadastro />} />
           <Route path="/esqueci-senha" element={<EsqueciSenha />} />
           <Route path="/redefinir-senha" element={<RedefinirSenha />} />
@@ -34,6 +57,10 @@ export default function App() {
           
           {/* Área do Administrador (Protegida) */}
           <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+
+          {/* ROTA DE SEGURANÇA (CATCH-ALL) */}
+          {/* Se qualquer rota der erro ou não existir, volta para o início */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
