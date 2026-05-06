@@ -24,6 +24,7 @@ export default function AdminDashboard() {
   const [clientes, setClientes] = useState([]);
   const [cortesGerais, setCortesGerais] = useState([]); 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [planosInfo, setPlanosInfo] = useState({});
   
   const [abaAtiva, setAbaAtiva] = useState('todos'); 
@@ -35,17 +36,21 @@ export default function AdminDashboard() {
     isOpen: false, type: 'alert', title: '', message: '', onConfirm: null 
   });
 
-  const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [modalPlanosAberto, setModalPlanosAberto] = useState(false);
+  const [mostrarAguardando, setMostrarAguardando] = useState(true);
+
+  const navigate = useNavigate();
+ 
 
   const fecharModal = () => setModalConfig({ ...modalConfig, isOpen: false });
   const showConfirm = (title, message, acao) => setModalConfig({ isOpen: true, type: 'confirm', title, message, onConfirm: acao });
   const showAlert = (title, message) => setModalConfig({ isOpen: true, type: 'alert', title, message, onConfirm: null });
 
-  const carregarDados = async () => {
+  const carregarDados = async (isManualRefresh = false) => {
+    if (isManualRefresh) setRefreshing(true);
+    
     try {
-      // Busca os planos direto do banco
       const { data: dadosPlanos, error: errPlanos } = await supabase
         .from('planos')
         .select('*');
@@ -76,7 +81,7 @@ export default function AdminDashboard() {
       const { data: dadosCortes, error: errCortes } = await supabase
         .from('historico_cortes')
         .select(`
-          id, created_at, tipo_corte,
+          id, created_at, tipo_corte, cliente_id,
           clientes ( nome, whatsapp )
         `)
         .order('created_at', { ascending: false });
@@ -90,10 +95,33 @@ export default function AdminDashboard() {
       console.error("Erro ao buscar dados:", error);
     } finally {
       setLoading(false);
+      if (isManualRefresh) {
+        setTimeout(() => setRefreshing(false), 600);
+      }
     }
   };
 
-  useEffect(() => { carregarDados(); }, []);
+  useEffect(() => { 
+    carregarDados(); 
+
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'clientes' },
+        () => carregarDados()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'assinaturas' },
+        () => carregarDados()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -168,12 +196,16 @@ export default function AdminDashboard() {
   const anoAtual = new Date().getFullYear();
 
   const clientesProcessados = clientes.map(cliente => {
-    const assinatura = cliente.assinaturas?.[0] || null;
+    const todasAssinaturas = cliente.assinaturas || [];
+    const assinatura = todasAssinaturas.find(a => a.status === 'ativa') || 
+                       todasAssinaturas.find(a => a.status === 'pendente') || 
+                       [...todasAssinaturas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || 
+                       null;
+
     const planoDetalhe = assinatura ? planosInfo[assinatura.plano_escolhido] : null;
 
     const cortesNoMes = cortesGerais.filter(corte => {
-      if (!corte.clientes) return false;
-      const ehDesteCliente = corte.clientes.nome === cliente.nome; 
+      const ehDesteCliente = corte.cliente_id === cliente.id; 
       const dataCorte = new Date(corte.created_at);
       const ehNesteMes = dataCorte.getMonth() === mesAtual && dataCorte.getFullYear() === anoAtual;
       return ehDesteCliente && ehNesteMes;
@@ -182,14 +214,46 @@ export default function AdminDashboard() {
     return { ...cliente, assinatura, planoDetalhe, cortesNoMes };
   });
 
-  const aguardandoAtivacao = clientesProcessados.filter(c => c.assinatura?.status === 'pendente');
+  const aguardandoAtivacao = [];
+  clientes.forEach(cliente => {
+    const pendentes = (cliente.assinaturas || []).filter(a => a.status === 'pendente');
+    pendentes.forEach(assinaturaPendente => {
+      aguardandoAtivacao.push({
+        ...cliente,
+        assinatura: assinaturaPendente
+      });
+    });
+  });
+
+  // LÓGICA DE CÁLCULO DE RENDA
+  const calcularRenda = () => {
+    let faturamentoMensal = 0;
+    let previsaoProximoMes = 0;
+    
+    clientesProcessados.forEach(cliente => {
+      if (cliente.assinatura?.status === 'ativa' && cliente.planoDetalhe) {
+        const valor = parseFloat(cliente.planoDetalhe.preco.replace('R$ ', '').replace('.', '').replace(',', '.'));
+        faturamentoMensal += valor;
+        previsaoProximoMes += valor;
+      }
+    });
+
+    return { faturamentoMensal, previsaoProximoMes };
+  };
+
+  const { faturamentoMensal, previsaoProximoMes } = calcularRenda();
   
   let listaClientesFiltrada = clientesProcessados.filter(c =>
     c.nome.toLowerCase().includes(busca.toLowerCase()) || c.whatsapp.includes(busca)
   );
 
-  if (abaAtiva === 'ativos') listaClientesFiltrada = listaClientesFiltrada.filter(c => c.assinatura?.status === 'ativa');
-  else if (abaAtiva === 'inativos') listaClientesFiltrada = listaClientesFiltrada.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa');
+  if (abaAtiva === 'ativos') {
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.assinatura?.status === 'ativa');
+  } else if (abaAtiva === 'inativos') {
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa');
+  } else if (abaAtiva === 'pendentes') {
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.assinatura?.status === 'pendente');
+  }
 
   const listaCortesFiltrada = cortesGerais.filter(corte => {
     if (!dataFiltro) return true; 
@@ -212,11 +276,16 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-[#09090b] text-white p-6 font-sans pb-20">
       
       <DrawerAdmin 
-  isOpen={drawerOpen} 
-  onClose={() => setDrawerOpen(false)} 
-  onOpenPlanos={() => setModalPlanosAberto(true)}
-  onLogout={handleLogout} // Adicione esta linha aqui
-/>
+        isOpen={drawerOpen} 
+        onClose={() => setDrawerOpen(false)} 
+        onOpenPlanos={() => setModalPlanosAberto(true)}
+        onLogout={handleLogout}
+        dadosFinanceiros={{ 
+          faturamentoMensal, 
+          previsaoProximoMes, 
+          totalAtivos: clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length 
+        }}
+      />
       <ModalPlanos 
         isOpen={modalPlanosAberto} 
         onClose={() => setModalPlanosAberto(false)} 
@@ -234,37 +303,63 @@ export default function AdminDashboard() {
 
       <header className="flex justify-between items-center mb-8 mt-4">
         <h1 className="text-[#CEAA6B] font-black text-xl tracking-widest uppercase">Painel ADMIN</h1>
-        <button onClick={() => setDrawerOpen(true)} className="w-10 h-10 rounded-full border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => carregarDados(true)} 
+            disabled={refreshing}
+            className="w-10 h-10 rounded-full border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-[#CEAA6B] transition-colors active:scale-95 disabled:opacity-50"
+          >
+            <svg 
+              className={`${refreshing ? 'animate-spin text-[#CEAA6B]' : ''}`}
+              width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <path d="M21 2v6h-6"></path>
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            </svg>
+          </button>
+          
+          <button onClick={() => setDrawerOpen(true)} className="w-10 h-10 rounded-full border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors active:scale-95">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+        </div>
       </header>
 
       {abaAtiva !== 'historico' && aguardandoAtivacao.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-            Aguardando Ativação ({aguardandoAtivacao.length})
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
-          </h2>
+          <button 
+            onClick={() => setMostrarAguardando(!mostrarAguardando)}
+            className="w-full flex items-center justify-between text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-4 outline-none active:scale-[0.98] transition-transform"
+          >
+            <span>Aguardando Ativação ({aguardandoAtivacao.length})</span>
+            <svg 
+              className={`transition-transform duration-300 ${mostrarAguardando ? 'rotate-180' : ''}`} 
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
           
-          <div className="space-y-3">
-            {aguardandoAtivacao.map(cliente => (
-              <div key={cliente.id} className="bg-[#121212] border border-[#27272a] rounded-[20px] p-5 flex justify-between items-center">
-                <div>
-                  <h3 className="font-bold text-lg leading-tight">{cliente.nome}</h3>
-                  <p className="text-[#CEAA6B] text-[10px] font-bold uppercase mt-1">
-                    {planosInfo[cliente.assinatura.plano_escolhido]?.nome || 'Plano Antigo'} • Solicitado às {formatarHora(cliente.assinatura.created_at)}
-                  </p>
-                  <p className="text-zinc-500 text-[10px] mt-1">WhatsApp: {cliente.whatsapp}</p>
+          {mostrarAguardando && (
+            <div className="space-y-3 animate-[fadeIn_0.2s_ease-out]">
+              {aguardandoAtivacao.map((item, index) => (
+                <div key={`${item.id}-${index}`} className="bg-[#121212] border border-[#27272a] rounded-[20px] p-5 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-lg leading-tight">{item.nome}</h3>
+                    <p className="text-[#CEAA6B] text-[10px] font-bold uppercase mt-1">
+                      {planosInfo[item.assinatura.plano_escolhido]?.nome || 'Plano Antigo'} • Solicitado às {formatarHora(item.assinatura.created_at)}
+                    </p>
+                    <p className="text-zinc-500 text-[10px] mt-1">WhatsApp: {item.whatsapp}</p>
+                  </div>
+                  <button 
+                    onClick={() => confirmarAtivacao(item.assinatura.id, item.nome)}
+                    className="bg-[#CEAA6B] text-black font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl active:scale-95 transition-transform"
+                  >
+                    Ativar
+                  </button>
                 </div>
-                <button 
-                  onClick={() => confirmarAtivacao(cliente.assinatura.id, cliente.nome)}
-                  className="bg-[#CEAA6B] text-black font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl active:scale-95 transition-transform"
-                >
-                  Ativar
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -274,6 +369,9 @@ export default function AdminDashboard() {
         </button>
         <button onClick={() => setAbaAtiva('ativos')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'ativos' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
           Ativos ({clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length})
+        </button>
+        <button onClick={() => setAbaAtiva('pendentes')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'pendentes' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
+          Pendentes ({clientesProcessados.filter(c => c.assinatura?.status === 'pendente').length})
         </button>
         <button onClick={() => setAbaAtiva('inativos')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'inativos' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
           Inativos ({clientesProcessados.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa').length})
@@ -299,6 +397,8 @@ export default function AdminDashboard() {
           <div className="space-y-4">
             {listaClientesFiltrada.map(cliente => {
               const statusAtivo = cliente.assinatura?.status === 'ativa';
+              const statusPendente = cliente.assinatura?.status === 'pendente';
+              
               return (
                 <div key={cliente.id} className="bg-[#121212] border border-[#27272a] rounded-[24px] p-5">
                   <div className="flex items-center gap-4 border-b border-[#27272a] pb-4 mb-4">
@@ -319,6 +419,8 @@ export default function AdminDashboard() {
                           )}
                           {statusAtivo ? (
                             <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Ativo</span>
+                          ) : statusPendente ? (
+                            <span className="bg-[#CEAA6B]/10 text-[#CEAA6B] text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Pendente</span>
                           ) : (
                             <span className="bg-red-500/10 text-red-500 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Inativo</span>
                           )}
@@ -335,7 +437,9 @@ export default function AdminDashboard() {
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                       <span className="font-medium">{cliente.cortesNoMes} de {cliente.planoDetalhe?.limite || 0} cortes no mês</span>
                     </div>
-                    <span className="text-zinc-500 font-medium">Vence {formatarData(cliente.assinatura?.data_vencimento)}</span>
+                    <span className="text-zinc-500 font-medium">
+                      {statusPendente ? 'Aguardando Ativação' : `Vence ${formatarData(cliente.assinatura?.data_vencimento)}`}
+                    </span>
                   </div>
                 </div>
               );

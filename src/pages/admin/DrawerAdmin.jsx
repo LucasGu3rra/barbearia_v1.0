@@ -1,79 +1,126 @@
-import React from 'react';
+import { useState } from 'react';
 
-export default function DrawerAdmin({ isOpen, onClose, onOpenPlanos, onLogout }) {
+export default function DrawerAdmin({ isOpen, onClose, onOpenPlanos, onLogout, dadosFinanceiros }) {
+  const [modalFinanceiro, setModalFinanceiro] = useState(false);
+
+  if (!isOpen) return null;
+
+  const formatarMoeda = (valor) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+  };
+
   return (
     <>
-      {/* Fundo escuro (Overlay) */}
-      <div 
-        className={`fixed inset-0 bg-black/80 backdrop-blur-sm z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={onClose}
-      ></div>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]" onClick={onClose} />
 
-      {/* Menu Lateral (Drawer) */}
-      <div 
-        className={`fixed top-0 right-0 h-full w-72 bg-[#121212] border-l border-[#27272a] z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
-      >
-        <div className="p-6 h-full flex flex-col">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-[#CEAA6B] font-bold text-sm tracking-widest uppercase">Configurações</h2>
-            <button 
-              onClick={onClose} 
-              className="w-8 h-8 rounded-full bg-[#09090b] border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
-          </div>
+      {/* Drawer */}
+      <div className="fixed right-0 top-0 h-full w-72 bg-[#09090b] border-l border-[#27272a] z-[70] p-6 flex flex-col animate-[slideIn_0.3s_ease-out]">
+        <div className="flex justify-between items-center mb-10">
+          <h2 className="text-[#CEAA6B] font-bold uppercase tracking-widest text-sm">Menu Admin</h2>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
 
-          <div className="space-y-3 flex-1">
-            {/* Botão Gerenciar Planos */}
-            <button 
-              onClick={() => {
-                onOpenPlanos(); 
-                onClose();      
-              }}
-              className="w-full flex items-center gap-3 bg-[#09090b] border border-[#27272a] p-4 rounded-2xl hover:border-[#CEAA6B]/50 transition-colors text-left group"
-            >
-              <div className="w-8 h-8 rounded-full bg-[#121212] border border-[#27272a] flex items-center justify-center group-hover:border-[#CEAA6B]/50 transition-colors">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#CEAA6B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-              </div>
-              <div>
-                <span className="block text-sm font-bold text-white">Gerenciar Planos</span>
-                <span className="block text-[10px] text-zinc-500 mt-0.5">Ajuste nomes, preços e limites</span>
-              </div>
-            </button>
+        <nav className="flex-1 space-y-3">
+          <button 
+            onClick={() => { setModalFinanceiro(true); }} 
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#CEAA6B]/10 flex items-center justify-center text-[#CEAA6B] group-hover:bg-[#CEAA6B] group-hover:text-black transition-all">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+            </div>
+            <div className="text-left">
+              <span className="block font-bold text-sm">Financeiro</span>
+              <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">Renda e Previsão</span>
+            </div>
+          </button>
 
-            {/* Botão Agendamento (Em breve) */}
-            <button 
-              disabled
-              className="w-full flex items-center gap-3 bg-[#09090b]/50 border border-[#27272a] p-4 rounded-2xl opacity-60 cursor-not-allowed text-left"
-            >
-              <div className="w-8 h-8 rounded-full bg-[#121212] border border-[#27272a] flex items-center justify-center">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-              </div>
-              <div>
-                <span className="block text-sm font-bold text-zinc-400">Agendamento</span>
-                <span className="block text-[10px] text-[#CEAA6B] font-bold uppercase mt-0.5 tracking-wider">Em breve</span>
-              </div>
-            </button>
-          </div>
+          <button 
+            onClick={() => { onOpenPlanos(); onClose(); }} 
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:bg-white group-hover:text-black transition-all">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+            </div>
+            <div className="text-left">
+              <span className="block font-bold text-sm">Planos</span>
+              <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">Gerenciar Valores</span>
+            </div>
+          </button>
+        </nav>
 
-          {/* Botão de Logout no final */}
-          <div className="pt-6 border-t border-[#27272a]">
-            <button 
-              onClick={onLogout}
-              className="w-full flex items-center gap-3 bg-red-500/5 border border-red-500/20 p-4 rounded-2xl hover:bg-red-500/10 transition-colors text-left group"
-            >
-              <div className="w-8 h-8 rounded-full bg-[#121212] border border-red-500/20 flex items-center justify-center group-hover:border-red-500/40 transition-colors text-red-500">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        <button onClick={onLogout} className="mt-auto w-full flex items-center justify-center gap-2 p-4 rounded-2xl bg-red-500/5 text-red-500/60 font-bold text-xs uppercase tracking-widest hover:bg-red-500/10 hover:text-red-500 transition-all border border-transparent hover:border-red-500/20">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+          Sair do Painel
+        </button>
+      </div>
+
+      {/* Modal Financeiro Premium - Escala Ajustada */}
+      {modalFinanceiro && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#09090b] border border-[#27272a] w-full max-w-sm rounded-[32px] overflow-hidden shadow-2xl animate-[scaleIn_0.2s_ease-out]">
+            
+            {/* Header do Modal */}
+            <div className="relative p-6 pb-0">
+              <button 
+                onClick={() => setModalFinanceiro(false)}
+                className="absolute right-4 top-4 w-8 h-8 rounded-full bg-[#121212] border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+              
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-[#CEAA6B] flex items-center justify-center text-black shadow-[0_0_15px_rgba(206,170,107,0.2)]">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                </div>
+                <h3 className="text-xl font-black text-white tracking-tight">Financeiro</h3>
               </div>
-              <div>
-                <span className="block text-sm font-bold text-red-500">Sair da Conta</span>
-                <span className="block text-[10px] text-zinc-600 mt-0.5">Encerrar sessão atual</span>
+            </div>
+
+            <div className="p-6 pt-2 space-y-4">
+              {/* Card Faturamento Atual */}
+              <div className="relative overflow-hidden bg-gradient-to-br from-[#121212] to-[#09090b] p-5 rounded-[24px] border border-[#27272a] group">
+                <div className="absolute -right-4 -top-4 w-20 h-20 bg-[#CEAA6B]/5 rounded-full blur-2xl group-hover:bg-[#CEAA6B]/10 transition-all" />
+                <p className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-1.5">Faturamento Atual</p>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-3xl font-black text-white tracking-tighter">
+                    {formatarMoeda(dadosFinanceiros?.faturamentoMensal || 0).split(',')[0]}
+                  </span>
+                  <span className="text-base font-bold text-[#CEAA6B]">
+                    ,{formatarMoeda(dadosFinanceiros?.faturamentoMensal || 0).split(',')[1]}
+                  </span>
+                </div>
               </div>
-            </button>
+
+              {/* Card Previsão */}
+              <div className="bg-[#121212]/50 p-5 rounded-[24px] border border-[#27272a] flex justify-between items-center">
+                <div>
+                  <p className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-0.5">Previsão Próximo Mês</p>
+                  <p className="text-lg font-black text-emerald-500 tracking-tight">{formatarMoeda(dadosFinanceiros?.previsaoProximoMes || 0)}</p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                </div>
+              </div>
+
+              {/* Info Adicional Simples */}
+              <div className="flex justify-between items-center px-4 py-3 bg-[#121212] rounded-xl border border-[#27272a]">
+                <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Assinantes Ativos</span>
+                <span className="text-xs font-black text-white">{dadosFinanceiros?.totalAtivos || 0}</span>
+              </div>
+
+              <button 
+                onClick={() => setModalFinanceiro(false)} 
+                className="w-full bg-white text-black font-black py-4 rounded-[20px] uppercase tracking-[0.2em] text-[9px] active:scale-95 transition-all shadow-[0_8px_15px_rgba(255,255,255,0.1)]"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
