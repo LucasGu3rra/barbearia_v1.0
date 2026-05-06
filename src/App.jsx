@@ -16,17 +16,14 @@ import TelaBloqueio from './pages/cliente/TelaBloqueio';
 import AdminDashboard from './pages/admin/AdminDashboard';
 
 // Componente para gerenciar a rota inicial "/"
-// Ele decide se manda para o Login ou para o Dashboard correto
+// Ele decide se manda para o Login ou para o Dashboard correto baseado no banco de dados
 const InitialRoute = () => {
-  const { user, loading } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
 
-  if (loading) return null; // Espera o Supabase carregar
+  if (loading) return null; // Espera o Supabase e o AuthContext carregarem
 
   if (user) {
-    // Se estiver logado, verifica se é admin pelo email ou metadados
-    // (Ajuste a lógica abaixo se você tiver um campo específico no banco)
-    const isAdmin = user.email === 'seu-email-admin@gmail.com' || user.user_metadata?.role === 'admin';
-    
+    // Agora usamos a flag isAdmin que vem do banco de dados via AuthContext
     if (isAdmin) {
       return <Navigate to="/admin/dashboard" replace />;
     }
@@ -59,7 +56,7 @@ export default function App() {
           <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
 
           {/* ROTA DE SEGURANÇA (CATCH-ALL) */}
-          {/* Se qualquer rota der erro ou não existir, volta para o início */}
+          {/* Se qualquer rota não existir, volta para o início que redirecionará corretamente */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
