@@ -5,18 +5,36 @@ const AuthContext = createContext({});
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false); // Novo estado
   const [loading, setLoading] = useState(true);
 
+  const checkAdminStatus = async (userId) => {
+    const { data } = await supabase
+      .from('clientes')
+      .select('eh_admin')
+      .eq('id', userId)
+      .single();
+    setIsAdmin(data?.eh_admin || false);
+  };
+
   useEffect(() => {
-    // 1. Verifica sessão atual ao carregar o site
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
+      if (session?.user) {
+        setUser(session.user);
+        checkAdminStatus(session.user.id).then(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
     });
 
-    // 2. Ouve mudanças na autenticação (login, logout, refresh de token)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      if (session?.user) {
+        setUser(session.user);
+        checkAdminStatus(session.user.id);
+      } else {
+        setUser(null);
+        setIsAdmin(false);
+      }
       setLoading(false);
     });
 
@@ -24,7 +42,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, authenticated: !!user }}>
+    <AuthContext.Provider value={{ user, isAdmin, loading, authenticated: !!user }}>
       {!loading && children}
     </AuthContext.Provider>
   );
