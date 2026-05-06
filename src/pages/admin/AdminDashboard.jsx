@@ -101,9 +101,39 @@ export default function AdminDashboard() {
     }
   };
 
-  useEffect(() => { 
-    carregarDados(); 
+useEffect(() => { 
+    let isMounted = true;
 
+    // 1. A FUNÇÃO DO "SEGURANÇA DA PORTA"
+    const checarAdminReal = async () => {
+      // Pega a sessão atual direto do servidor do Supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) return navigate('/');
+
+      // Vai no banco de dados e checa a verdade absoluta
+      const { data } = await supabase
+        .from('clientes')
+        .select('eh_admin')
+        .eq('id', user.id)
+        .single();
+
+      // Se o cara fraudou o LocalStorage, a gente corrige e chuta ele pra fora
+      if (!data?.eh_admin) {
+        localStorage.setItem('isAdmin', 'false');
+        return navigate('/dashboard');
+      }
+
+      // Se for admin de verdade, CARREGA OS DADOS!
+      if (isMounted) {
+        carregarDados();
+      }
+    };
+
+    // 2. EXECUTA A CHECAGEM IMEDIATAMENTE
+    checarAdminReal(); 
+
+    // 3. MANTÉM OS SEUS OLHEIROS (Tempo Real) FUNCIONANDO
     const channel = supabase
       .channel('schema-db-changes')
       .on(
@@ -118,10 +148,12 @@ export default function AdminDashboard() {
       )
       .subscribe();
 
+    // 4. LIMPA TUDO SE SAIR DA TELA
     return () => {
+      isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [navigate]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
