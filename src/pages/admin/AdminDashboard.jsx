@@ -243,9 +243,14 @@ export default function AdminDashboard() {
 
   const { faturamentoMensal, previsaoProximoMes } = calcularRenda();
   
-  let listaClientesFiltrada = clientesProcessados.filter(c =>
-    c.nome.toLowerCase().includes(busca.toLowerCase()) || c.whatsapp.includes(busca)
-  );
+let listaClientesFiltrada = clientesProcessados.filter(c => {
+    // Converte para string e garante que não vai quebrar se for null
+    const nomeSeguro = c.nome ? String(c.nome).toLowerCase() : '';
+    const whatsappSeguro = c.whatsapp ? String(c.whatsapp) : '';
+    const buscaSegura = busca ? String(busca).toLowerCase() : '';
+    
+    return nomeSeguro.includes(buscaSegura) || whatsappSeguro.includes(buscaSegura);
+  });
 
   if (abaAtiva === 'ativos') {
     listaClientesFiltrada = listaClientesFiltrada.filter(c => c.assinatura?.status === 'ativa');
@@ -263,9 +268,10 @@ export default function AdminDashboard() {
            d.getFullYear() === dataFiltro.getFullYear();
   });
 
-  const getIniciais = (nome) => {
+const getIniciais = (nome) => {
     if (!nome) return '??';
-    const partes = nome.split(' ');
+    // Garante que é string antes de tentar usar o .split()
+    const partes = String(nome).split(' ');
     if (partes.length >= 2) return (partes[0][0] + partes[1][0]).toUpperCase();
     return partes[0].substring(0, 2).toUpperCase();
   };
