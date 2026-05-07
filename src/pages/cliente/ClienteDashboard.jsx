@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import ModalAlerta from "../components/ModalAlerta";
 import { useAuth } from '../../contexts/AuthContext';
+import DrawerClientes from './DrawerClientes'; 
 
 // Garante que o usuário não deslogue ao recarregar a página
 const getClienteId = () => {
@@ -48,12 +49,10 @@ export default function ClienteDashboard() {
     isOpen: false, type: 'alert', title: '', message: '', onConfirm: null 
   });
 
-  // ESTADO PARA ARMAZENAR OS PLANOS VINDOS DO BANCO
   const [planosDb, setPlanosDb] = useState([]);
   const [mapaPlanos, setMapaPlanos] = useState({});
 
  useEffect(() => {
-    // 👈 Só prossegue quando o AuthContext terminar de carregar a sessão do Supabase
     if (authLoading) return; 
 
     const clienteId = getClienteId();
@@ -62,7 +61,7 @@ export default function ClienteDashboard() {
     } else {
       carregarDados(clienteId);
     }
-  }, [navigate, authLoading]); // 👈 Adicione o authLoading nas dependências
+  }, [navigate, authLoading]); 
 
   useEffect(() => {
     const verificarCancelamento = () => {
@@ -90,7 +89,6 @@ export default function ClienteDashboard() {
 
   async function carregarDados(id) {
     try {
-      // 1. BUSCA OS PLANOS ATUALIZADOS DO BANCO
       const { data: dadosPlanos, error: errPlanos } = await supabase
         .from('planos')
         .select('*');
@@ -102,7 +100,6 @@ export default function ClienteDashboard() {
       setPlanosDb(dadosPlanos);
       setMapaPlanos(mapa);
 
-      // 2. BUSCA DADOS DO CLIENTE
       const { data: cli, error: erroSupabase } = await supabase
         .from('clientes')
         .select(`
@@ -125,7 +122,6 @@ export default function ClienteDashboard() {
       cortesDoMes.sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
       setHistoricoMes(cortesDoMes);
 
-      // PEGA O LIMITE DO PLANO ESCOLHIDO NO BANCO
       const planoInfo = mapa[ass.plano_escolhido];
       const limitePlano = planoInfo?.limite || 4;
 
@@ -292,6 +288,18 @@ export default function ClienteDashboard() {
     } catch (e) { console.error(e); } finally { setSalvandoCorte(false); }
   };
 
+  const fecharMenu = () => {
+    setMenuAberto(false);
+    setEditandoNome(false);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut(); 
+    localStorage.clear(); 
+    sessionStorage.clear(); 
+    navigate('/'); 
+  };
+
   if (loading || !dados) return <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-[#CEAA6B] font-bold uppercase tracking-widest text-xs">Carregando...</div>;
 
   return (
@@ -310,77 +318,21 @@ export default function ClienteDashboard() {
       </div>
 
       {/* DRAWER */}
-      <div className={`fixed inset-0 z-40 transition-opacity duration-300 ${menuAberto ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => {setMenuAberto(false); setEditandoNome(false);}}></div>
-        <div className={`absolute right-0 top-0 bottom-0 w-4/5 max-w-[320px] bg-[#0c0c0e] border-l border-[#27272a] p-6 flex flex-col transition-transform duration-300 ease-out ${menuAberto ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-lg font-bold text-white">Minha Conta</h2>
-            <button onClick={() => setMenuAberto(false)} className="text-zinc-500"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-          </div>
-          
-          <div className="mb-8">
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Nome</p>
-                {!editandoNome && dados.alteracoesNome < LIMITE_ALTERACOES && (
-                  <button onClick={() => {setEditandoNome(true); setNovoNome(dados.nome);}} className="text-[#CEAA6B] text-[10px] font-bold uppercase">Editar</button>
-                )}
-              </div>
-              {editandoNome ? (
-                <div className="flex gap-2">
-                  <input autoFocus value={novoNome} onChange={e => setNovoNome(e.target.value)} className="flex-1 bg-[#121212] border border-[#27272a] text-white text-sm rounded-lg px-3 py-2 outline-none" />
-                  <button onClick={salvarNovoNome} className="bg-[#CEAA6B] text-black px-3 py-2 rounded-lg text-xs font-bold">Salvar</button>
-                </div>
-              ) : (
-                <div className="flex justify-between items-center">
-                  <p className="font-medium text-white">{dados.nome}</p>
-                </div>
-              )}
-            </div>
-            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">WhatsApp</p>
-            <p className="font-medium mb-4">{dados.whatsapp}</p>
-            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Status</p>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${dados.status === 'ativa' ? 'bg-[#22c55e]' : 'bg-orange-500'}`}></div>
-              <span className={`text-xs font-bold uppercase ${dados.status === 'ativa' ? 'text-[#22c55e]' : 'text-orange-500'}`}>
-                {dados.status === 'ativa' ? 'Assinatura Ativa' : 'Pendente'}
-              </span>
-            </div>
-          </div>
-
-          <h3 className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-3">Trocar Meu Plano</h3>
-          <div className="space-y-2 mb-auto overflow-y-auto">
-            {planosDb.map(p => (
-              <button key={p.id} onClick={() => alterarPlano(p.slug)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center transition-all ${dados.planoId === p.slug ? 'border-[#CEAA6B] bg-[#1a120b]' : 'border-[#27272a] bg-[#121212]'}`}>
-                <div>
-                  <p className={`font-bold text-sm ${dados.planoId === p.slug ? 'text-[#CEAA6B]' : 'text-white'}`}>{p.nome}</p>
-                  <p className="text-[10px] text-zinc-500">R$ {p.preco}/mês</p>
-                </div>
-                {dados.planoId === p.slug ? <span className="bg-[#CEAA6B] text-black text-[9px] font-black px-2 py-1 rounded">ATUAL</span> : (dados.proximoPlano === p.slug && <span className="text-[8px] text-[#CEAA6B] font-bold uppercase border border-[#CEAA6B]/30 px-2 py-1 rounded">Agendado</span>)}
-              </button>
-            ))}
-            {dados.proximoPlano && (
-              <button onClick={cancelarAgendamento} className="w-full mt-2 text-zinc-500 text-[10px] font-bold uppercase py-2 hover:text-white transition-colors text-center border border-zinc-800 rounded-xl">
-                Cancelar Agendamento
-              </button>
-            )}
-          </div>
-          <button 
-            onClick={async () => { 
-              // 1. Avisa o Supabase para deslogar de verdade
-              await supabase.auth.signOut(); 
-              // 2. Limpa o cache
-              localStorage.clear(); 
-              sessionStorage.clear(); 
-              // 3. Joga pro login
-              navigate('/'); 
-            }} 
-            className="mt-8 py-4 text-red-500 text-xs font-bold uppercase tracking-widest border border-red-500/20 rounded-xl"
-          >
-            Sair
-          </button>
-        </div>
-      </div>
+      <DrawerClientes 
+        isOpen={menuAberto}
+        onClose={fecharMenu}
+        dados={dados}
+        editandoNome={editandoNome}
+        setEditandoNome={setEditandoNome}
+        novoNome={novoNome}
+        setNovoNome={setNovoNome}
+        salvarNovoNome={salvarNovoNome}
+        LIMITE_ALTERACOES={LIMITE_ALTERACOES}
+        planosDb={planosDb}
+        alterarPlano={alterarPlano}
+        cancelarAgendamento={cancelarAgendamento}
+        onLogout={handleLogout}
+      />
 
       {/* STATUS BANNER */}
       {(dados.status !== 'ativa' || dados.upgradePendente) && (
@@ -423,18 +375,59 @@ export default function ClienteDashboard() {
         </div>
       </div>
 
-      <div className="mb-6 flex-grow overflow-y-auto scrollbar-hide">
-        <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mb-3 pl-1">Histórico do mês</p>
-        <div className="space-y-1">
-          {historicoMes.length > 0 ? historicoMes.map((c, i) => (
-            <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-[#121212] border border-[#27272a]">
-              <div className="flex items-center gap-4">
-                <div className="w-8 h-8 rounded-full bg-[#09090b] flex items-center justify-center text-zinc-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div>
-                <div><p className="text-sm font-medium text-white">{c.tipo_corte}</p><p className="text-[10px] text-zinc-500">{parseDataSupabase(c.created_at).toLocaleDateString('pt-BR')}</p></div>
+      {/* ÁREA DE HISTÓRICO ATUALIZADA (COM SCROLL E HORÁRIO) */}
+      <div className="mb-6 flex-grow flex flex-col min-h-0">
+        <div className="flex justify-between items-end mb-3 pl-1">
+          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Histórico do mês</p>
+          {historicoMes.length > 0 && (
+            <p className="text-[#CEAA6B] text-[9px] font-bold uppercase tracking-widest bg-[#CEAA6B]/10 px-2 py-0.5 rounded">
+              {historicoMes.length} {historicoMes.length === 1 ? 'corte' : 'cortes'}
+            </p>
+          )}
+        </div>
+        
+        {/* Container que permite o deslize (scroll) com altura máxima definida */}
+        <div className="space-y-2 overflow-y-auto pr-1 pb-1 max-h-[220px] flex-1">
+          {historicoMes.length > 0 ? historicoMes.map((c, i) => {
+            const dataCorte = parseDataSupabase(c.created_at);
+            const dataFormatada = dataCorte.toLocaleDateString('pt-BR');
+            const horaFormatada = dataCorte.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+            return (
+              <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-[#121212] border border-[#27272a]">
+                <div className="flex items-center gap-4">
+                  <div className="w-9 h-9 rounded-full bg-[#1a120b] border border-[#CEAA6B]/20 flex items-center justify-center text-[#CEAA6B]">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">{c.tipo_corte}</p>
+                    <div className="flex items-center gap-2 text-[10px] text-zinc-500 mt-1">
+                      <span className="flex items-center gap-1">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                        {dataFormatada}
+                      </span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        {horaFormatada}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <div className="w-2 h-2 bg-[#22c55e] rounded-full shadow-[0_0_6px_rgba(34,197,94,0.6)]"></div>
+                  <span className="text-[8px] text-zinc-600 font-bold uppercase tracking-wider">Feito</span>
+                </div>
               </div>
-              <div className="w-1.5 h-1.5 bg-[#22c55e] rounded-full mr-2"></div>
+            );
+          }) : (
+            <div className="p-6 text-center border border-dashed border-[#27272a] rounded-2xl">
+              <p className="text-zinc-600 text-xs italic">Nenhum serviço registrado neste mês.</p>
             </div>
-          )) : <div className="p-4 text-center text-zinc-600 text-xs italic">Nenhum corte registrado.</div>}
+          )}
         </div>
       </div>
 
@@ -446,7 +439,7 @@ export default function ClienteDashboard() {
             </button>
           ) : (
             <button disabled={dados.cortesRestantes === 0 || salvandoCorte} onClick={handleConfirmarCorte} className="w-full bg-[#CEAA6B] text-black font-bold py-4 rounded-2xl transition-all">
-              {salvandoCorte ? 'Registrando...' : dados.cortesRestantes > 0 ? 'Confirmar Corte' : 'Cortes Esgotados'}
+              {salvandoCorte ? 'Registrando...' : dados.cortesRestantes > 0 ? 'Confirmar Serviço' : 'Limites Esgotados'}
             </button>
           )
         ) : (
