@@ -7,6 +7,9 @@ export default function EscolhaPlano() {
   const [loadingId, setLoadingId] = useState(null); 
   const [nomeCliente, setNomeCliente] = useState('');
   
+  // Controle de exibição (Avulsos vs Planos)
+  const [mostrarPlanos, setMostrarPlanos] = useState(false);
+  
   // Estados do Modal de Checkout
   const [modalAberto, setModalAberto] = useState(false);
   const [planoSelecionado, setPlanoSelecionado] = useState(null);
@@ -20,6 +23,13 @@ export default function EscolhaPlano() {
   const [planos, setPlanos] = useState([]);
   const [carregandoPlanos, setCarregandoPlanos] = useState(true);
 
+  // MOCK PROVISÓRIO DOS SERVIÇOS AVULSOS (Barba alterada para 25)
+  const servicosAvulsos = [
+    { id: 1, nome: 'Só Cabelo', preco: 30, limitePlano: 5, precoPlanoCorrespondente: 80 },
+    { id: 2, nome: 'Só Barba', preco: 25, limitePlano: 5, precoPlanoCorrespondente: 60 },
+    { id: 3, nome: 'Cabelo & Barba', preco: 50, limitePlano: 5, precoPlanoCorrespondente: 130 },
+  ];
+
   useEffect(() => {
     const buscarPlanos = async () => {
       try {
@@ -27,7 +37,7 @@ export default function EscolhaPlano() {
           .from('planos')
           .select('*')
           .eq('ativo', true)
-          .order('preco', { ascending: true }); // Ordena do mais barato para o mais caro
+          .order('preco', { ascending: true }); 
         
         if (error) throw error;
         setPlanos(data || []);
@@ -40,7 +50,6 @@ export default function EscolhaPlano() {
     buscarPlanos();
   }, []);
 
-  // Puxa o nome do cliente ao abrir a tela para usarmos na mensagem do Zap
   useEffect(() => {
     const buscarNome = async () => {
       const id = localStorage.getItem('clienteId');
@@ -73,7 +82,6 @@ export default function EscolhaPlano() {
     setModalAberto(false);
 
     try {
-      // 1. Salva ou atualiza a assinatura como PENDENTE no banco
       const { data: assinaturaExistente } = await supabase.from('assinaturas').select('*').eq('cliente_id', clienteId).maybeSingle();
 
       if (assinaturaExistente) {
@@ -82,7 +90,6 @@ export default function EscolhaPlano() {
         await supabase.from('assinaturas').insert([{ cliente_id: clienteId, plano_escolhido: planoSelecionado.slug, status: 'pendente' }]);
       }
 
-      // 2. Monta a mensagem inteligente para o WhatsApp
       let mensagem = `Olá João! Me chamo *${nomeCliente}*.\nAcabei de solicitar o *Plano ${planoSelecionado.nome}* no aplicativo.\n\n`;
       
       if (metodoPagamento === 'pix') {
@@ -93,7 +100,6 @@ export default function EscolhaPlano() {
 
       const urlWhatsapp = `https://wa.me/${WHATSAPP_JOAO}?text=${encodeURIComponent(mensagem)}`;
       
-      // 3. Abre o WhatsApp e joga o cliente pro dashboard
       window.open(urlWhatsapp, '_blank');
       navigate('/dashboard');
 
@@ -103,47 +109,142 @@ export default function EscolhaPlano() {
     }
   }
 
+  // Função auxiliar para exibir a economia na tela de planos (RODANDO EM 5X)
+  const calcularEconomiaDinamica = (nomePlano, precoPlano) => {
+    let precoAvulso = 30; 
+    const nomeLower = nomePlano.toLowerCase();
+    
+    if (nomeLower.includes('barba') && nomeLower.includes('cabelo')) precoAvulso = 50;
+    else if (nomeLower.includes('barba')) precoAvulso = 25; // Barba atualizada para 25
+    else if (nomeLower.includes('cabelo')) precoAvulso = 30;
+    
+    // A mágica: calcula a economia em 5 cortes
+    return (precoAvulso * 5) - precoPlano;
+  };
+
   return (
-    <div className="min-h-screen bg-[#09090b] text-white p-6 font-sans flex flex-col items-center relative">
+    <div className="min-h-screen bg-[#09090b] text-white p-6 font-sans flex flex-col items-center relative overflow-x-hidden">
       
-      <header className="mb-10 text-center mt-6">
+      <header className="mb-8 text-center mt-6">
         <div className="flex items-center justify-center gap-2 mb-2">
           <div className="w-1.5 h-1.5 bg-[#CEAA6B] rounded-full"></div>
           <span className="text-[#CEAA6B] text-[10px] font-bold tracking-[0.3em] uppercase">Barbearia do João</span>
         </div>
-        <h1 className="text-2xl font-bold">Escolha seu plano</h1>
-        <p className="text-zinc-500 text-sm mt-2">Selecione o serviço que deseja contratar</p>
+        <h1 className="text-2xl font-bold">{mostrarPlanos ? 'Escolha sua Assinatura' : 'Nossos Serviços'}</h1>
+        <p className="text-zinc-500 text-sm mt-2">
+          {mostrarPlanos ? 'Selecione o plano ideal para você' : 'Veja quanto você pode economizar'}
+        </p>
       </header>
 
-      <div className="w-full max-w-[360px] space-y-4">
-        {carregandoPlanos ? (
-          <div className="text-center text-[#CEAA6B] animate-pulse py-10">Carregando planos...</div>
-        ) : (
-          planos.map((plano) => (
-          <button
-            key={plano.slug}
-            onClick={() => abrirCheckout(plano)}
-            disabled={loadingId !== null}
-            className={`w-full bg-[#121212] border border-[#27272a] p-6 rounded-[24px] text-left transition-all group ${loadingId !== null ? 'opacity-50 cursor-not-allowed' : 'hover:border-[#CEAA6B]/50 active:scale-[0.98]'}`}
-          >
-            <div className="flex justify-between items-center mb-1">
-              <span className="font-bold text-lg group-hover:text-[#CEAA6B] transition-colors">{plano.nome}</span>
-              <span className="text-[#CEAA6B] font-black text-lg">
-                {loadingId === plano.slug ? <span className="text-sm animate-pulse">Salvando...</span> : <>R$ {plano.preco}<small className="text-[10px] text-zinc-600 ml-1 uppercase">/mês</small></>}
-              </span>
-            </div>
-            <p className="text-zinc-500 text-xs font-medium">{plano.limite} cortes por mês</p>
-          </button>
-        )))}  </div>
+      <div className="w-full max-w-[360px] flex-1">
+        
+        {/* TELA 1: SERVIÇOS AVULSOS */}
+        {!mostrarPlanos ? (
+          <div className="space-y-4 animate-[fadeIn_0.3s_ease-in-out]">
+            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest pl-1 mb-2">Serviços Avulsos</p>
+            
+            {servicosAvulsos.map((servico) => {
+              // MÁGICA AQUI: Mostra o gasto de 4x, mas calcula a economia de 5x
+              const gastoRotinaNormal = servico.preco * 4; 
+              const economiaTotal = (servico.preco * 5) - servico.precoPlanoCorrespondente;
+              
+              return (
+                <div key={servico.id} className="bg-[#121212] border border-[#27272a] p-5 rounded-[24px]">
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="font-bold text-lg text-white">{servico.nome}</span>
+                    <span className="text-zinc-400 font-medium">R$ {servico.preco}</span>
+                  </div>
+                  
+                  {/* Caixa de Destaque da Economia */}
+                  <div className="bg-[#1a120b] border border-[#CEAA6B]/30 rounded-xl p-4 relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 w-16 h-16 bg-[#CEAA6B]/10 blur-xl rounded-full"></div>
+                    
+                    <p className="text-zinc-400 text-xs mb-1 relative z-10">
+                      Cortando só 4x no mês você já gastaria <span className="line-through text-red-400/80">R$ {gastoRotinaNormal}</span>
+                    </p>
+                    
+                    <div className="flex justify-between items-end mt-2 relative z-10">
+                      <div>
+                        <p className="text-[#CEAA6B] font-bold text-sm">No Plano ({servico.limitePlano} cortes): R$ {servico.precoPlanoCorrespondente}</p>
+                      </div>
+                      <div className="bg-[#CEAA6B] text-black text-[9px] font-black uppercase px-2 py-1 rounded shadow-[0_0_8px_rgba(206,170,107,0.4)] whitespace-nowrap ml-2">
+                        Economize R$ {economiaTotal}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
 
-      <div className="mt-auto pt-8 mb-6 text-center">
+            {/* BOTÃO CHAMATIVO PARA IR AOS PLANOS */}
+            <div className="pt-4 pb-8">
+              <button 
+                onClick={() => setMostrarPlanos(true)}
+                className="w-full bg-[#CEAA6B] text-black font-black uppercase tracking-wider py-4 rounded-xl shadow-[0_0_20px_rgba(206,170,107,0.3)] animate-pulse hover:scale-[1.02] transition-transform flex items-center justify-center gap-2"
+              >
+                Ver Planos com Desconto
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+          </div>
+        ) : (
+          
+          /* TELA 2: LISTA DE PLANOS DO BANCO DE DADOS */
+          <div className="space-y-4 animate-[fadeIn_0.3s_ease-in-out]">
+            <button 
+              onClick={() => setMostrarPlanos(false)}
+              className="mb-2 text-[#CEAA6B] text-xs font-bold uppercase tracking-widest flex items-center gap-1"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              Voltar aos serviços
+            </button>
+
+            {carregandoPlanos ? (
+              <div className="text-center text-[#CEAA6B] animate-pulse py-10">Carregando planos...</div>
+            ) : (
+              planos.map((plano) => {
+                const economiaCalculada = calcularEconomiaDinamica(plano.nome, plano.preco);
+
+                return (
+                  <button
+                    key={plano.slug}
+                    onClick={() => abrirCheckout(plano)}
+                    disabled={loadingId !== null}
+                    className={`w-full bg-[#121212] border border-[#27272a] p-6 rounded-[24px] text-left transition-all relative overflow-hidden group ${loadingId !== null ? 'opacity-50 cursor-not-allowed' : 'hover:border-[#CEAA6B]/50 active:scale-[0.98]'}`}
+                  >
+                    {/* Badge de Destaque no Plano */}
+                    <div className="absolute top-0 right-0 bg-[#CEAA6B] text-black text-[8px] font-black uppercase px-3 py-1 rounded-bl-lg">
+                      Economia de R$ {economiaCalculada}
+                    </div>
+
+                    <div className="flex justify-between items-end mb-2 mt-2">
+                      <div>
+                        <span className="block font-bold text-lg text-white group-hover:text-[#CEAA6B] transition-colors">{plano.nome}</span>
+                        <span className="text-zinc-500 text-xs font-medium">{plano.limite} cortes garantidos</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="block text-zinc-500 text-[10px] line-through mb-0.5">Valor Real R$ {plano.preco + economiaCalculada}</span>
+                        <span className="text-[#CEAA6B] font-black text-xl">
+                          {loadingId === plano.slug ? <span className="text-sm animate-pulse">Salvando...</span> : <>R$ {plano.preco}<small className="text-[10px] text-zinc-600 ml-1 uppercase">/mês</small></>}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-auto pt-6 mb-4 text-center">
         <p className="text-zinc-600 text-[10px] uppercase tracking-[0.2em] leading-relaxed">
           O pagamento e a ativação <br/>
-          serão realizados diretamente com o João.
+          serão realizados diretamente na barbearia.
         </p>
       </div>
 
-      {/* MODAL DE CHECKOUT EXCLUSIVO */}
+      {/* MODAL DE CHECKOUT INTACTO */}
       {modalAberto && planoSelecionado && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity p-4 sm:p-6 pb-0 sm:pb-6">
           <div className="bg-[#121212] border border-[#27272a] rounded-t-[32px] sm:rounded-[32px] w-full max-w-[400px] p-6 pb-10 sm:pb-6 animate-[slideUp_0.3s_ease-out]">
@@ -188,7 +289,7 @@ export default function EscolhaPlano() {
             ) : (
               <div className="bg-[#09090b] border border-[#27272a] rounded-2xl p-4 mb-6 text-center">
                 <p className="text-zinc-400 text-sm">Você pagará na barbearia.</p>
-                <p className="text-zinc-500 text-xs mt-1">Seu plano só será ativado após o acerto com o João.</p>
+                <p className="text-zinc-500 text-xs mt-1">Seu plano só será ativado após o acerto na barbearia.</p>
               </div>
             )}
 
@@ -201,6 +302,7 @@ export default function EscolhaPlano() {
       
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}} />
     </div>
   );
