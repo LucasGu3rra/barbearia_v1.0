@@ -5,10 +5,7 @@ export default function DrawerAdmin({
   onClose, 
   onLogout, 
   dadosFinanceiros,
-<<<<<<< HEAD
   onOpenPlanos,
-=======
->>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
   onOpenFiliais,
   onOpenBarbeiros,
   onOpenServicos,
@@ -43,10 +40,10 @@ export default function DrawerAdmin({
         </div>
 
         <nav className="flex-1 space-y-3 overflow-y-auto">
-<<<<<<< HEAD
 
-=======
->>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
+
+
+
           {/* Botão Financeiro */}
           <button
             onClick={() => setModalFinanceiro(true)}
@@ -60,8 +57,6 @@ export default function DrawerAdmin({
               <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">Renda e Previsão</span>
             </div>
           </button>
-
-<<<<<<< HEAD
           {/* Botão Planos */}
           <button
             onClick={() => { onOpenPlanos(); onClose(); }}
@@ -158,7 +153,6 @@ export default function DrawerAdmin({
 
               </div>
             </div>
-=======
           {/* Botão Configurações (accordion) */}
           <div>
             <button
@@ -241,13 +235,11 @@ export default function DrawerAdmin({
 
               </div>
             </div>
->>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
           </div>
         </nav>
 
         <button onClick={onLogout} className="mt-6 w-full flex items-center justify-center gap-2 p-4 rounded-2xl bg-red-500/5 text-red-500/60 font-bold text-xs uppercase tracking-widest hover:bg-red-500/10 hover:text-red-500 transition-all border border-transparent hover:border-red-500/20">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-          Sair do Painel
         </button>
       </div>
 
@@ -303,7 +295,6 @@ export default function DrawerAdmin({
                 onClick={() => setModalFinanceiro(false)}
                 className="w-full bg-white text-black font-black py-4 rounded-[20px] uppercase tracking-[0.2em] text-[9px] active:scale-95 transition-all shadow-[0_8px_15px_rgba(255,255,255,0.1)]"
               >
-                Fechar
               </button>
             </div>
           </div>
@@ -312,3 +303,4 @@ export default function DrawerAdmin({
     </>
   );
 }
+
