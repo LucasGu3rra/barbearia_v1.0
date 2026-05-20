@@ -1,4 +1,8 @@
 import { useState, useEffect, forwardRef } from 'react';
+import ModalFiliais from '../components/ModalFiliais';
+import ModalBarbeiros from '../components/ModalBarbeiros';
+import ModalServicos from '../components/ModalServicos';
+import ModalConfiguracoes from '../components/ModalConfiguracoes';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import ModalAlerta from "../components/ModalAlerta";
@@ -38,6 +42,10 @@ export default function AdminDashboard() {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [modalPlanosAberto, setModalPlanosAberto] = useState(false);
+  const [modalFiliaisAberto, setModalFiliaisAberto] = useState(false);
+  const [modalBarbeirosAberto, setModalBarbeirosAberto] = useState(false);
+  const [modalServicosAberto, setModalServicosAberto] = useState(false);
+  const [modalConfiguracoesAberto, setModalConfiguracoesAberto] = useState(false);
   const [mostrarAguardando, setMostrarAguardando] = useState(true);
 
   const navigate = useNavigate();
@@ -316,18 +324,39 @@ const getIniciais = (nome) => {
       <DrawerAdmin 
         isOpen={drawerOpen} 
         onClose={() => setDrawerOpen(false)} 
-        onOpenPlanos={() => setModalPlanosAberto(true)}
         onLogout={handleLogout}
         dadosFinanceiros={{ 
           faturamentoMensal, 
           previsaoProximoMes, 
           totalAtivos: clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length 
         }}
+        onOpenPlanos={() => setModalPlanosAberto(true)}
+        onOpenFiliais={() => setModalFiliaisAberto(true)}
+        onOpenBarbeiros={() => setModalBarbeirosAberto(true)}
+        onOpenServicos={() => setModalServicosAberto(true)}
+        onOpenConfiguracoes={() => setModalConfiguracoesAberto(true)}
       />
       <ModalPlanos 
         isOpen={modalPlanosAberto} 
         onClose={() => setModalPlanosAberto(false)} 
         onRefresh={carregarDados}
+      />
+      <ModalFiliais
+        isOpen={modalFiliaisAberto}
+        onClose={() => setModalFiliaisAberto(false)}
+      />
+      <ModalBarbeiros
+        isOpen={modalBarbeirosAberto}
+        onClose={() => setModalBarbeirosAberto(false)}
+      />
+      <ModalServicos
+        isOpen={modalServicosAberto}
+        onClose={() => setModalServicosAberto(false)}
+        onRefresh={carregarDados}
+      />
+      <ModalConfiguracoes
+        isOpen={modalConfiguracoesAberto}
+        onClose={() => setModalConfiguracoesAberto(false)}
       />
 
       <ModalAlerta 
