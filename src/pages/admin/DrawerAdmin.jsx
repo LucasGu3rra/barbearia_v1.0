@@ -5,7 +5,10 @@ export default function DrawerAdmin({
   onClose, 
   onLogout, 
   dadosFinanceiros,
+<<<<<<< HEAD
   onOpenPlanos,
+=======
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
   onOpenFiliais,
   onOpenBarbeiros,
   onOpenServicos,
@@ -40,7 +43,10 @@ export default function DrawerAdmin({
         </div>
 
         <nav className="flex-1 space-y-3 overflow-y-auto">
+<<<<<<< HEAD
 
+=======
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
           {/* Botão Financeiro */}
           <button
             onClick={() => setModalFinanceiro(true)}
@@ -55,6 +61,7 @@ export default function DrawerAdmin({
             </div>
           </button>
 
+<<<<<<< HEAD
           {/* Botão Planos */}
           <button
             onClick={() => { onOpenPlanos(); onClose(); }}
@@ -151,6 +158,90 @@ export default function DrawerAdmin({
 
               </div>
             </div>
+=======
+          {/* Botão Configurações (accordion) */}
+          <div>
+            <button
+              onClick={() => setConfigAberto(!configAberto)}
+              className={`w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group ${configAberto ? 'border-[#CEAA6B]/50' : 'border-[#27272a]'}`}
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${configAberto ? 'bg-[#CEAA6B] text-black' : 'bg-zinc-800 text-zinc-400 group-hover:bg-white group-hover:text-black'}`}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+              </div>
+              <div className="text-left flex-1">
+                <span className="block font-bold text-sm">Configurações</span>
+                <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">Filiais, Barbeiros e Mais</span>
+              </div>
+              <svg
+                className={`text-zinc-500 transition-transform duration-300 flex-shrink-0 ${configAberto ? 'rotate-180 text-[#CEAA6B]' : ''}`}
+                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              >
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+
+            {/* Submenu accordion */}
+            <div className={`overflow-hidden transition-all duration-300 ${configAberto ? 'max-h-96 opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+              <div className="ml-3 space-y-1.5 border-l border-[#27272a] pl-3">
+
+                <button
+                  onClick={() => handleConfigItem(onOpenFiliais)}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B]/50 hover:bg-[#18181b] transition-all group"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:bg-[#CEAA6B]/10 group-hover:text-[#CEAA6B] transition-all flex-shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                  </div>
+                  <div className="text-left">
+                    <span className="block font-bold text-xs">Filiais</span>
+                    <span className="block text-[9px] text-zinc-500 uppercase tracking-wider">Gerenciar Unidades</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleConfigItem(onOpenBarbeiros)}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B]/50 hover:bg-[#18181b] transition-all group"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:bg-[#CEAA6B]/10 group-hover:text-[#CEAA6B] transition-all flex-shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  </div>
+                  <div className="text-left">
+                    <span className="block font-bold text-xs">Barbeiros</span>
+                    <span className="block text-[9px] text-zinc-500 uppercase tracking-wider">Gerenciar Profissionais</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleConfigItem(onOpenServicos)}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B]/50 hover:bg-[#18181b] transition-all group"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:bg-[#CEAA6B]/10 group-hover:text-[#CEAA6B] transition-all flex-shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"></path><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"></path><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"></path><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"></path><path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z"></path><path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"></path><path d="M10 9.5C10 8.67 9.33 8 8.5 8h-5C2.67 8 2 8.67 2 9.5S2.67 11 3.5 11h5c.83 0 1.5-.67 1.5-1.5z"></path><path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z"></path></svg>
+                  </div>
+                  <div className="text-left">
+                    <span className="block font-bold text-xs">Serviços</span>
+                    <span className="block text-[9px] text-zinc-500 uppercase tracking-wider">Gerenciar Serviços</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleConfigItem(onOpenConfiguracoes)}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B]/50 hover:bg-[#18181b] transition-all group"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:bg-[#CEAA6B]/10 group-hover:text-[#CEAA6B] transition-all flex-shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  </div>
+                  <div className="text-left">
+                    <span className="block font-bold text-xs">Fluxo de Agendamento</span>
+                    <span className="block text-[9px] text-zinc-500 uppercase tracking-wider">Configurar Jornada</span>
+                  </div>
+                </button>
+
+              </div>
+            </div>
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
           </div>
         </nav>
 

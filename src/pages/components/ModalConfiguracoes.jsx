@@ -198,4 +198,8 @@ export default function ModalConfiguracoes({ isOpen, onClose }) {
       </div>
     </div>
   );
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
