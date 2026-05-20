@@ -16,38 +16,38 @@ export default function EscolhaPlano() {
   const [metodoPagamento, setMetodoPagamento] = useState('pix');
   const [pixCopiado, setPixCopiado] = useState(false);
 
-  // Substitua pela chave PIX e número do João reais
   const CHAVE_PIX = "81988468182";
   const WHATSAPP_JOAO = "5581988468182"; 
 
   const [planos, setPlanos] = useState([]);
   const [carregandoPlanos, setCarregandoPlanos] = useState(true);
 
-  // MOCK PROVISÓRIO DOS SERVIÇOS AVULSOS (Barba alterada para 25)
-  const servicosAvulsos = [
-    { id: 1, nome: 'Só Cabelo', preco: 30, limitePlano: 5, precoPlanoCorrespondente: 80 },
-    { id: 2, nome: 'Só Barba', preco: 25, limitePlano: 5, precoPlanoCorrespondente: 60 },
-    { id: 3, nome: 'Cabelo & Barba', preco: 50, limitePlano: 5, precoPlanoCorrespondente: 130 },
-  ];
+  // Serviços avulsos vindos do banco
+  const [servicosAvulsos, setServicosAvulsos] = useState([]);
+  const [carregandoServicos, setCarregandoServicos] = useState(true);
 
   useEffect(() => {
-    const buscarPlanos = async () => {
+    const buscarDados = async () => {
       try {
-        const { data, error } = await supabase
-          .from('planos')
-          .select('*')
-          .eq('ativo', true)
-          .order('preco', { ascending: true }); 
-        
-        if (error) throw error;
-        setPlanos(data || []);
+        // Busca planos e serviços em paralelo
+        const [{ data: dadosPlanos, error: errPlanos }, { data: dadosServicos, error: errServicos }] = await Promise.all([
+          supabase.from('planos').select('*').eq('ativo', true).order('preco', { ascending: true }),
+          supabase.from('servicos').select('*').eq('ativo', true).order('created_at', { ascending: true }),
+        ]);
+
+        if (errPlanos) throw errPlanos;
+        if (errServicos) throw errServicos;
+
+        setPlanos(dadosPlanos || []);
+        setServicosAvulsos(dadosServicos || []);
       } catch (error) {
-        console.error("Erro ao carregar planos:", error);
+        console.error("Erro ao carregar dados:", error);
       } finally {
         setCarregandoPlanos(false);
+        setCarregandoServicos(false);
       }
     };
-    buscarPlanos();
+    buscarDados();
   }, []);
 
   useEffect(() => {
@@ -109,17 +109,22 @@ export default function EscolhaPlano() {
     }
   }
 
-  // Função auxiliar para exibir a economia na tela de planos (RODANDO EM 5X)
-  const calcularEconomiaDinamica = (nomePlano, precoPlano) => {
-    let precoAvulso = 30; 
+  // Calcula a economia de um plano com base nos serviços cadastrados:
+  // Usa o serviço de maior preço como referência (pior caso = mais economia visível)
+  const calcularEconomiaDinamica = (nomePlano, precoPlano, limitePlano) => {
+    if (servicosAvulsos.length === 0) return 0;
+
+    // Tenta encontrar um serviço cujo nome bate com o nome do plano
     const nomeLower = nomePlano.toLowerCase();
-    
-    if (nomeLower.includes('barba') && nomeLower.includes('cabelo')) precoAvulso = 50;
-    else if (nomeLower.includes('barba')) precoAvulso = 25; // Barba atualizada para 25
-    else if (nomeLower.includes('cabelo')) precoAvulso = 30;
-    
-    // A mágica: calcula a economia em 5 cortes
-    return (precoAvulso * 5) - precoPlano;
+    let servicoRef = servicosAvulsos.find(s => nomeLower.includes(s.nome.toLowerCase()));
+
+    // Se não encontrou, usa o serviço de maior preço como referência
+    if (!servicoRef) {
+      servicoRef = [...servicosAvulsos].sort((a, b) => b.preco - a.preco)[0];
+    }
+
+    const limite = limitePlano || 4;
+    return (Number(servicoRef.preco) * limite) - Number(precoPlano);
   };
 
   return (
@@ -143,38 +148,58 @@ export default function EscolhaPlano() {
           <div className="space-y-4 animate-[fadeIn_0.3s_ease-in-out]">
             <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest pl-1 mb-2">Serviços Avulsos</p>
             
-            {servicosAvulsos.map((servico) => {
-              // MÁGICA AQUI: Mostra o gasto de 4x, mas calcula a economia de 5x
-              const gastoRotinaNormal = servico.preco * 4; 
-              const economiaTotal = (servico.preco * 5) - servico.precoPlanoCorrespondente;
-              
-              return (
-                <div key={servico.id} className="bg-[#121212] border border-[#27272a] p-5 rounded-[24px]">
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="font-bold text-lg text-white">{servico.nome}</span>
-                    <span className="text-zinc-400 font-medium">R$ {servico.preco}</span>
-                  </div>
-                  
-                  {/* Caixa de Destaque da Economia */}
-                  <div className="bg-[#1a120b] border border-[#CEAA6B]/30 rounded-xl p-4 relative overflow-hidden">
-                    <div className="absolute -right-4 -top-4 w-16 h-16 bg-[#CEAA6B]/10 blur-xl rounded-full"></div>
+            {carregandoServicos ? (
+              <div className="text-center text-[#CEAA6B] animate-pulse py-10 text-xs uppercase tracking-widest">Carregando serviços...</div>
+            ) : servicosAvulsos.length === 0 ? (
+              <div className="text-center py-10 border border-dashed border-[#27272a] rounded-2xl">
+                <p className="text-zinc-600 text-xs italic">Nenhum serviço disponível no momento.</p>
+              </div>
+            ) : (
+              servicosAvulsos.map((servico) => {
+                // Referência: gasto em 4x no mês vs plano mais barato disponível
+                const gastoRotinaNormal = Number(servico.preco) * 4;
+                // Pega o plano mais barato para mostrar a comparação
+                const planoCheap = planos.length > 0 ? planos[0] : null;
+                const precoPlanoRef = planoCheap ? Number(planoCheap.preco) : null;
+                const economiaTotal = precoPlanoRef !== null
+                  ? (Number(servico.preco) * (planoCheap.limite || 4)) - precoPlanoRef
+                  : null;
+
+                return (
+                  <div key={servico.id} className="bg-[#121212] border border-[#27272a] p-5 rounded-[24px]">
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="font-bold text-lg text-white">{servico.nome}</span>
+                      <span className="text-zinc-400 font-medium">R$ {Number(servico.preco).toFixed(0)}</span>
+                    </div>
                     
-                    <p className="text-zinc-400 text-xs mb-1 relative z-10">
-                      Cortando só 4x no mês você já gastaria <span className="line-through text-red-400/80">R$ {gastoRotinaNormal}</span>
-                    </p>
-                    
-                    <div className="flex justify-between items-end mt-2 relative z-10">
-                      <div>
-                        <p className="text-[#CEAA6B] font-bold text-sm">No Plano ({servico.limitePlano} cortes): R$ {servico.precoPlanoCorrespondente}</p>
-                      </div>
-                      <div className="bg-[#CEAA6B] text-black text-[9px] font-black uppercase px-2 py-1 rounded shadow-[0_0_8px_rgba(206,170,107,0.4)] whitespace-nowrap ml-2">
-                        Economize R$ {economiaTotal}
-                      </div>
+                    {/* Caixa de Destaque da Economia */}
+                    <div className="bg-[#1a120b] border border-[#CEAA6B]/30 rounded-xl p-4 relative overflow-hidden">
+                      <div className="absolute -right-4 -top-4 w-16 h-16 bg-[#CEAA6B]/10 blur-xl rounded-full"></div>
+                      
+                      <p className="text-zinc-400 text-xs mb-1 relative z-10">
+                        Cortando só 4x no mês você já gastaria{' '}
+                        <span className="line-through text-red-400/80">R$ {gastoRotinaNormal.toFixed(0)}</span>
+                      </p>
+                      
+                      {planoCheap && economiaTotal !== null && (
+                        <div className="flex justify-between items-end mt-2 relative z-10">
+                          <div>
+                            <p className="text-[#CEAA6B] font-bold text-sm">
+                              No Plano ({planoCheap.limite} cortes): R$ {Number(planoCheap.preco).toFixed(0)}
+                            </p>
+                          </div>
+                          {economiaTotal > 0 && (
+                            <div className="bg-[#CEAA6B] text-black text-[9px] font-black uppercase px-2 py-1 rounded shadow-[0_0_8px_rgba(206,170,107,0.4)] whitespace-nowrap ml-2">
+                              Economize R$ {economiaTotal.toFixed(0)}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
 
             {/* BOTÃO CHAMATIVO PARA IR AOS PLANOS */}
             <div className="pt-4 pb-8">
@@ -203,7 +228,7 @@ export default function EscolhaPlano() {
               <div className="text-center text-[#CEAA6B] animate-pulse py-10">Carregando planos...</div>
             ) : (
               planos.map((plano) => {
-                const economiaCalculada = calcularEconomiaDinamica(plano.nome, plano.preco);
+                const economiaCalculada = calcularEconomiaDinamica(plano.nome, plano.preco, plano.limite);
 
                 return (
                   <button
@@ -212,10 +237,11 @@ export default function EscolhaPlano() {
                     disabled={loadingId !== null}
                     className={`w-full bg-[#121212] border border-[#27272a] p-6 rounded-[24px] text-left transition-all relative overflow-hidden group ${loadingId !== null ? 'opacity-50 cursor-not-allowed' : 'hover:border-[#CEAA6B]/50 active:scale-[0.98]'}`}
                   >
-                    {/* Badge de Destaque no Plano */}
-                    <div className="absolute top-0 right-0 bg-[#CEAA6B] text-black text-[8px] font-black uppercase px-3 py-1 rounded-bl-lg">
-                      Economia de R$ {economiaCalculada}
-                    </div>
+                    {economiaCalculada > 0 && (
+                      <div className="absolute top-0 right-0 bg-[#CEAA6B] text-black text-[8px] font-black uppercase px-3 py-1 rounded-bl-lg">
+                        Economia de R$ {economiaCalculada.toFixed(0)}
+                      </div>
+                    )}
 
                     <div className="flex justify-between items-end mb-2 mt-2">
                       <div>
@@ -223,9 +249,16 @@ export default function EscolhaPlano() {
                         <span className="text-zinc-500 text-xs font-medium">{plano.limite} cortes garantidos</span>
                       </div>
                       <div className="text-right">
-                        <span className="block text-zinc-500 text-[10px] line-through mb-0.5">Valor Real R$ {plano.preco + economiaCalculada}</span>
+                        {economiaCalculada > 0 && (
+                          <span className="block text-zinc-500 text-[10px] line-through mb-0.5">
+                            Valor Real R$ {(Number(plano.preco) + economiaCalculada).toFixed(0)}
+                          </span>
+                        )}
                         <span className="text-[#CEAA6B] font-black text-xl">
-                          {loadingId === plano.slug ? <span className="text-sm animate-pulse">Salvando...</span> : <>R$ {plano.preco}<small className="text-[10px] text-zinc-600 ml-1 uppercase">/mês</small></>}
+                          {loadingId === plano.slug 
+                            ? <span className="text-sm animate-pulse">Salvando...</span> 
+                            : <>R$ {Number(plano.preco).toFixed(0)}<small className="text-[10px] text-zinc-600 ml-1 uppercase">/mês</small></>
+                          }
                         </span>
                       </div>
                     </div>
@@ -244,7 +277,7 @@ export default function EscolhaPlano() {
         </p>
       </div>
 
-      {/* MODAL DE CHECKOUT INTACTO */}
+      {/* MODAL DE CHECKOUT */}
       {modalAberto && planoSelecionado && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity p-4 sm:p-6 pb-0 sm:pb-6">
           <div className="bg-[#121212] border border-[#27272a] rounded-t-[32px] sm:rounded-[32px] w-full max-w-[400px] p-6 pb-10 sm:pb-6 animate-[slideUp_0.3s_ease-out]">
@@ -252,11 +285,9 @@ export default function EscolhaPlano() {
             <div className="flex justify-between items-start mb-6">
               <div>
                 <h3 className="text-xl font-bold text-white mb-1">Finalizar Contratação</h3>
-                <p className="text-[#CEAA6B] font-bold">Plano {planoSelecionado.nome} • R$ {planoSelecionado.preco}/mês</p>
+                <p className="text-[#CEAA6B] font-bold">Plano {planoSelecionado.nome} • R$ {Number(planoSelecionado.preco).toFixed(0)}/mês</p>
               </div>
-              <button onClick={() => setModalAberto(false)} className="w-8 h-8 flex items-center justify-center bg-[#27272a] text-zinc-400 rounded-full hover:text-white">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
+              <button onClick={() => setModalAberto(false)} className="w-8 h-8 flex items-center justify-center bg-[#27272a] text-zinc-400 rounded-full text-sm font-bold">✕</button>
             </div>
 
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Forma de Pagamento</p>

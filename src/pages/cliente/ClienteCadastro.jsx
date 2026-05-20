@@ -5,7 +5,7 @@ import { supabase } from '../../services/supabase';
 export default function ClienteCadastro() {
   const [nome, setNome] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
-  const [email, setEmail] = useState(''); // Trocamos 'usuario' por 'email'
+  const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
   
@@ -32,7 +32,7 @@ export default function ClienteCadastro() {
     setLoading(true);
 
     try {
-      // 1. Cria o usuário no sistema de Autenticação do Supabase (Criptografa a senha)
+      // 1. Cria o usuário no sistema de Autenticação do Supabase
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password: senha,
@@ -43,7 +43,7 @@ export default function ClienteCadastro() {
 
       const userId = authData.user.id;
 
-      // 2. Insere os dados complementares na nossa tabela 'clientes' usando o ID seguro
+      // 2. Insere os dados complementares na tabela 'clientes'
       const { error: dbError } = await supabase
         .from('clientes')
         .insert([{ 
@@ -56,12 +56,23 @@ export default function ClienteCadastro() {
 
       if (dbError) throw dbError;
 
-      // 3. Salva a sessão no navegador e avança para os planos
+      // 3. Salva a sessão no navegador
       localStorage.setItem('clienteId', userId);
-      navigate('/planos');
+
+      // 4. Verifica se o agendamento está ativo para decidir o destino
+      const { data: cfg } = await supabase
+        .from('configuracoes')
+        .select('valor')
+        .eq('chave', 'fluxo_agendamento')
+        .single();
+
+      const agendamentoAtivo = cfg?.valor?.agendamento_ativo === true;
+
+      // Se agendamento ativo → dashboard (avulso pode usar o app)
+      // Se não → obrigatório escolher plano
+      navigate(agendamentoAtivo ? '/dashboard' : '/planos');
 
     } catch (error) {
-      // O Supabase retorna as mensagens em inglês por padrão, podemos traduzir algumas comuns
       let msg = error.message;
       if (msg.includes('User already registered')) msg = "Este e-mail já está cadastrado.";
       alert('Erro ao cadastrar: ' + msg);
