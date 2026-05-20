@@ -5,7 +5,11 @@ export default function ModalServicos({ isOpen, onClose, onRefresh }) {
   const [servicos, setServicos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
+<<<<<<< HEAD
   const [novoServico, setNovoServico] = useState({ nome: '', preco: '', duracao_minutos: 30 });
+=======
+  const [novoServico, setNovoServico] = useState({ nome: '', duracao_minutos: 30 });
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
   const [adicionando, setAdicionando] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -29,11 +33,14 @@ export default function ModalServicos({ isOpen, onClose, onRefresh }) {
       setErro('O nome do serviço é obrigatório.');
       return;
     }
+<<<<<<< HEAD
     const preco = parseFloat(novoServico.preco);
     if (!novoServico.preco || isNaN(preco) || preco <= 0) {
       setErro('Informe um preço avulso válido.');
       return;
     }
+=======
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
     const duracao = parseInt(novoServico.duracao_minutos);
     if (!duracao || duracao < 5) {
       setErro('A duração mínima é de 5 minutos.');
@@ -43,12 +50,20 @@ export default function ModalServicos({ isOpen, onClose, onRefresh }) {
     setErro('');
     const { error } = await supabase
       .from('servicos')
+<<<<<<< HEAD
       .insert([{ nome: novoServico.nome.trim(), preco, duracao_minutos: duracao }]);
+=======
+      .insert([{ nome: novoServico.nome.trim(), duracao_minutos: duracao }]);
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
 
     if (error) {
       setErro('Erro ao salvar. Tente novamente.');
     } else {
+<<<<<<< HEAD
       setNovoServico({ nome: '', preco: '', duracao_minutos: 30 });
+=======
+      setNovoServico({ nome: '', duracao_minutos: 30 });
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
       setAdicionando(false);
       await carregarServicos();
       if (onRefresh) onRefresh();
@@ -84,11 +99,19 @@ export default function ModalServicos({ isOpen, onClose, onRefresh }) {
           </button>
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#CEAA6B]/10 flex items-center justify-center text-[#CEAA6B]">
+<<<<<<< HEAD
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 01-8 0"></path></svg>
             </div>
             <div>
               <h3 className="text-xl font-black text-white tracking-tight">Serviços</h3>
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Gerenciar Serviços Avulsos</p>
+=======
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"></path><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"></path><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"></path><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"></path><path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z"></path><path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"></path><path d="M10 9.5C10 8.67 9.33 8 8.5 8h-5C2.67 8 2 8.67 2 9.5S2.67 11 3.5 11h5c.83 0 1.5-.67 1.5-1.5z"></path><path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z"></path></svg>
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-white tracking-tight">Serviços</h3>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Gerenciar Serviços</p>
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
             </div>
           </div>
         </div>
@@ -109,6 +132,7 @@ export default function ModalServicos({ isOpen, onClose, onRefresh }) {
                 <div key={servico.id} className="bg-[#121212] border border-[#27272a] rounded-2xl p-4 flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-sm text-white truncate">{servico.nome}</p>
+<<<<<<< HEAD
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-[10px] text-[#CEAA6B] font-bold">
                         R$ {Number(servico.preco).toFixed(2).replace('.', ',')}
@@ -116,6 +140,9 @@ export default function ModalServicos({ isOpen, onClose, onRefresh }) {
                       <span className="text-zinc-600 text-[10px]">•</span>
                       <p className="text-[10px] text-zinc-500">{servico.duracao_minutos} min</p>
                     </div>
+=======
+                    <p className="text-[10px] text-zinc-500 mt-0.5">{servico.duracao_minutos} min</p>
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
                   </div>
                   {/* Toggle ativo/inativo */}
                   <button
@@ -132,11 +159,16 @@ export default function ModalServicos({ isOpen, onClose, onRefresh }) {
                 <div className="bg-[#121212] border border-[#CEAA6B]/30 rounded-2xl p-4 space-y-3">
                   <input
                     type="text"
+<<<<<<< HEAD
                     placeholder="Nome do serviço * (ex: Corte de Cabelo)"
+=======
+                    placeholder="Nome do serviço *"
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
                     value={novoServico.nome}
                     onChange={(e) => setNovoServico(prev => ({ ...prev, nome: e.target.value }))}
                     className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#CEAA6B]/50 placeholder-zinc-600 transition-colors"
                   />
+<<<<<<< HEAD
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest ml-1 mb-1 block">Preço Avulso (R$) *</label>
@@ -162,11 +194,28 @@ export default function ModalServicos({ isOpen, onClose, onRefresh }) {
                         className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#CEAA6B]/50 placeholder-zinc-600 transition-colors"
                       />
                     </div>
+=======
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min="5"
+                      step="5"
+                      placeholder="Duração (min)"
+                      value={novoServico.duracao_minutos}
+                      onChange={(e) => setNovoServico(prev => ({ ...prev, duracao_minutos: e.target.value }))}
+                      className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#CEAA6B]/50 placeholder-zinc-600 transition-colors"
+                    />
+                    <span className="text-zinc-500 text-xs whitespace-nowrap">minutos</span>
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
                   </div>
                   {erro && <p className="text-red-500 text-[11px] font-medium">{erro}</p>}
                   <div className="flex gap-2">
                     <button
+<<<<<<< HEAD
                       onClick={() => { setAdicionando(false); setErro(''); setNovoServico({ nome: '', preco: '', duracao_minutos: 30 }); }}
+=======
+                      onClick={() => { setAdicionando(false); setErro(''); setNovoServico({ nome: '', duracao_minutos: 30 }); }}
+>>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
                       className="flex-1 py-3 rounded-xl border border-[#27272a] text-zinc-500 text-xs font-bold uppercase tracking-wider hover:text-white transition-colors"
                     >
                       Cancelar
