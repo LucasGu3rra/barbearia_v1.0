@@ -330,10 +330,6 @@ const getIniciais = (nome) => {
           previsaoProximoMes, 
           totalAtivos: clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length 
         }}
-<<<<<<< HEAD
-        onOpenPlanos={() => setModalPlanosAberto(true)}
-=======
->>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
         onOpenFiliais={() => setModalFiliaisAberto(true)}
         onOpenBarbeiros={() => setModalBarbeirosAberto(true)}
         onOpenServicos={() => setModalServicosAberto(true)}
