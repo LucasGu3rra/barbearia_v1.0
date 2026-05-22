@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
-import ModalAlerta from "../components/ModalAlerta";
-import ModalAgendamento from "../components/ModalAgendamento";
-import { useAuth } from '../../contexts/AuthContext';
+import ModalAlerta from '../components/ModalAlerta';
+import ModalAgendamento from '../components/ModalAgendamento';
+import { useAuth } from '../../contexts/useAuth';
 import DrawerClientes from './DrawerClientes';
+import { montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
+import ClienteDashboardAvulso from './ClienteDashboardAvulso';
+import ClienteDashboardPendente from './ClienteDashboardPendente';
+import ClienteDashboardAtivo from './ClienteDashboardAtivo';
+import { parseDataSupabase } from './clienteDashboardUtils';
 
-const getClienteId = () => {
-  const id = localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
+const getClienteId = (userId) => {
+  const id = userId || localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
   if (id) {
     localStorage.setItem('clienteId', id);
     sessionStorage.setItem('clienteId', id);
@@ -15,63 +21,104 @@ const getClienteId = () => {
   return id;
 };
 
-const parseDataSupabase = (dataStr) => {
-  if (!dataStr) return new Date();
-  const dataLimpa = dataStr.split('.')[0].replace(' ', 'T') + 'Z';
-  return new Date(dataLimpa);
-};
+function Icon({ name, className = 'w-5 h-5' }) {
+  const icons = {
+    menu: <><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></>,
+    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></>,
+    crown: <><path d="m2 8 4 10h12l4-10-6 4-4-7-4 7-6-4z" /><path d="M6 18h12" /></>,
+    scissors: <><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4 8.1 15.9" /><path d="M14.5 14.5 20 20" /><path d="M8.1 8.1 12 12" /></>,
+    tool: <><path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2.8-2.8 2.2-2.6z" /></>,
+    sparkles: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" /><path d="m5 3 .7 2.3L8 6l-2.3.7L5 9l-.7-2.3L2 6l2.3-.7L5 3z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15z" /></>,
+    calendar: <><path d="M8 2v4" /><path d="M16 2v4" /><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18" /></>,
+    calendarOff: <><path d="M8 2v4" /><path d="M16 2v4" /><path d="M3 10h7" /><path d="M14 10h7" /><path d="M10 21H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11" /><path d="m16 16 5 5" /><path d="m21 16-5 5" /></>,
+    check: <><path d="M20 6 9 17l-5-5" /></>,
+    x: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
+    chevron: <><path d="m9 18 6-6-6-6" /></>,
+    whatsapp: <><path d="M3 21 4.8 16.3A8.5 8.5 0 1 1 8 19.2L3 21z" /><path d="M9 9c.2 3 2.8 5.3 6 6" /></>,
+    copy: <><rect x="9" y="9" width="13" height="13" rx="2" /><rect x="2" y="2" width="13" height="13" rx="2" /></>,
+    clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+    money: <><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 8h.01" /><path d="M11 12h1v4h1" /></>,
+    store: <><path d="M3 9h18l-1-5H4L3 9z" /><path d="M5 9v10h14V9" /><path d="M9 19v-6h6v6" /></>,
+  };
+
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {icons[name] || icons.sparkles}
+    </svg>
+  );
+}
+
+function TopBar({ onMenu, empresaNome }) {
+  return (
+    <div className="client-topbar">
+      <button onClick={onMenu} className="ib">
+        <Icon name="menu" />
+      </button>
+      <div className="client-brand">
+        {empresaNome}
+      </div>
+      <button className="ib notif-dot">
+        <Icon name="bell" />
+      </button>
+    </div>
+  );
+}
+
+function ClienteShell({ children, onMenu, empresaNome }) {
+  return (
+    <div className="client-page-root">
+      <div className="client-device">
+        <TopBar onMenu={onMenu} empresaNome={empresaNome} />
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default function ClienteDashboard() {
-  const { loading: authLoading } = useAuth();
+  const { user, loading: authLoading, empresaAtual } = useAuth();
+  const { empresaSlug } = useParams();
+  const empresaId = empresaAtual?.id;
+  const slugEmpresa = empresaAtual?.slug || empresaSlug;
+  const navigate = useNavigate();
+
   const [dados, setDados] = useState(null);
   const [historicoMes, setHistoricoMes] = useState([]);
   const [menuAberto, setMenuAberto] = useState(false);
   const [loading, setLoading] = useState(true);
   const [salvandoCorte, setSalvandoCorte] = useState(false);
   const [corteCancelavel, setCorteCancelavel] = useState(null);
-  const navigate = useNavigate();
-
-  // Estados de tipo e configuração
-  const [tipoCliente, setTipoCliente] = useState(null); // 'avulso' | 'pendente' | 'ativo'
+  const [tipoCliente, setTipoCliente] = useState(null);
   const [agendamentoAtivo, setAgendamentoAtivo] = useState(false);
-
-  // Modal de agendamento
   const [modalAgendamentoAberto, setModalAgendamentoAberto] = useState(false);
-
-  // Serviços e agendamentos (avulso)
+  const [servicoAgendamentoInicial, setServicoAgendamentoInicial] = useState(null);
   const [servicosAvulsos, setServicosAvulsos] = useState([]);
   const [agendamentos, setAgendamentos] = useState([]);
+  const [historicoCompleto, setHistoricoCompleto] = useState([]);
+  const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
   const [planosDb, setPlanosDb] = useState([]);
   const [mapaPlanos, setMapaPlanos] = useState({});
-  const [melhorPlano, setMelhorPlano] = useState(null);
-
-  // Checkout (assinante pendente/ativo)
   const [modalCheckoutAberto, setModalCheckoutAberto] = useState(false);
-  const [metodoPagamento, setMetodoPagamento] = useState('pix');
+  const [metodoPagamento] = useState('pix');
+  const [pagamentoIniciado, setPagamentoIniciado] = useState(false);
   const [pixCopiado, setPixCopiado] = useState(false);
-
-  // Edição de nome
   const [editandoNome, setEditandoNome] = useState(false);
   const [novoNome, setNovoNome] = useState('');
   const LIMITE_ALTERACOES = 2;
 
-  const CHAVE_PIX = "81988468182";
-  const WHATSAPP_JOAO = "5581988468182";
+  const CHAVE_PIX = empresaAtual?.chave_pix || '81988468182';
+  const WHATSAPP_JOAO = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '5581988468182');
+  const empresaNome = (empresaAtual?.nome || 'JOAO BARBER').toUpperCase();
+  const clienteIdAtual = useCallback(() => getClienteId(user?.id), [user?.id]);
 
   const [configModalAlerta, setConfigModalAlerta] = useState({
-    isOpen: false, type: 'alert', title: '', message: '', onConfirm: null
+    isOpen: false, type: 'alert', title: '', message: '', onConfirm: null,
   });
 
   useEffect(() => {
-    if (authLoading) return;
-    const clienteId = getClienteId();
-    if (!clienteId) { navigate('/'); return; }
-    carregarDados(clienteId);
-  }, [navigate, authLoading]);
-
-  // Controle de cancelamento de corte (somente assinante ativo)
-  useEffect(() => {
     if (tipoCliente !== 'ativo') return;
+
     const verificar = () => {
       if (historicoMes.length > 0) {
         const ultimo = historicoMes[0];
@@ -81,40 +128,37 @@ export default function ClienteDashboard() {
         setCorteCancelavel(null);
       }
     };
+
     verificar();
     const interval = setInterval(verificar, 5000);
     return () => clearInterval(interval);
   }, [historicoMes, tipoCliente]);
 
-  async function carregarDados(id) {
+  const carregarDados = useCallback(async (id) => {
     try {
       const [
+        { data: todosPlanos },
         { data: dadosPlanos },
         { data: dadosServicos },
         { data: dadosAgendamentos },
         { data: cfg },
+        { data: vinculoEmpresa },
       ] = await Promise.all([
-        supabase.from('planos').select('*').eq('ativo', true),
-        supabase.from('servicos').select('*').eq('ativo', true).order('created_at', { ascending: true }),
-        supabase.from('agendamentos').select('*, servicos(nome), filiais(nome), barbeiros(nome)').eq('cliente_id', id).order('created_at', { ascending: false }).limit(10),
-        supabase.from('configuracoes').select('valor').eq('chave', 'fluxo_agendamento').single(),
+        supabase.from('planos').select('*').eq('empresa_id', empresaId),
+        supabase.from('planos').select('*').eq('empresa_id', empresaId).eq('ativo', true).is('deleted_at', null).order('preco', { ascending: true }),
+        supabase.from('servicos').select('*, servico_categorias(nome), servico_subcategorias(nome)').eq('empresa_id', empresaId).eq('ativo', true).is('deleted_at', null).order('created_at', { ascending: true }),
+        supabase.from('agendamentos').select('*, servicos(nome), filiais(nome), barbeiros(nome)').eq('empresa_id', empresaId).eq('cliente_id', id).order('created_at', { ascending: false }).limit(10),
+        supabase.from('configuracoes').select('valor').eq('empresa_id', empresaId).eq('chave', 'fluxo_agendamento').maybeSingle(),
+        supabase.from('usuarios_empresas').select('created_at').eq('empresa_id', empresaId).eq('user_id', id).maybeSingle(),
       ]);
 
       const mapa = {};
-      (dadosPlanos || []).forEach(p => { mapa[p.slug] = p; });
+      (todosPlanos || []).forEach(p => { mapa[p.slug] = p; });
       setPlanosDb(dadosPlanos || []);
       setMapaPlanos(mapa);
       setServicosAvulsos(dadosServicos || []);
       setAgendamentos(dadosAgendamentos || []);
       setAgendamentoAtivo(cfg?.valor?.agendamento_ativo === true);
-
-      // Plano mais barato para comparação
-      const planos = dadosPlanos || [];
-      if (planos.length > 0) {
-        const mais_barato = planos.reduce((a, b) => a.preco < b.preco ? a : b);
-        setMelhorPlano(mais_barato);
-      }
-
       const { data: cli, error } = await supabase
         .from('clientes')
         .select(`
@@ -122,83 +166,79 @@ export default function ClienteDashboard() {
           assinaturas(status, data_vencimento, plano_escolhido, proximo_plano, upgrade_pendente),
           historico_cortes(id, created_at, tipo_corte)
         `)
-        .eq('id', id).single();
+        .eq('empresa_id', empresaId)
+        .eq('id', id)
+        .single();
 
       if (error) throw error;
 
-      const ass = cli.assinaturas?.[0];
+      const ass = cli.assinaturas?.find(a => a.plano_escolhido) || null;
       const temPlano = !!ass?.plano_escolhido;
       const statusAss = ass?.status;
-
-      // Determina tipo do cliente
-      let tipo = 'avulso';
-      if (temPlano && statusAss === 'ativa') tipo = 'ativo';
-      else if (temPlano) tipo = 'pendente';
-
-      // Se agendamento desativado e cliente avulso → força ir para planos
-      if (!cfg?.valor?.agendamento_ativo && tipo === 'avulso') {
-        navigate('/planos');
-        return;
-      }
+      const tipo = temPlano && statusAss === 'ativa' ? 'ativo' : temPlano ? 'pendente' : 'avulso';
 
       setTipoCliente(tipo);
 
-      if (tipo === 'ativo') {
-        const hoje = new Date();
-        const cortesDoMes = (cli.historico_cortes || []).filter(c => {
+      const hoje = new Date();
+      const cortesDoMes = (cli.historico_cortes || [])
+        .filter(c => {
           const d = parseDataSupabase(c.created_at);
           return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
-        });
-        cortesDoMes.sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
-        setHistoricoMes(cortesDoMes);
+        })
+        .sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
+      const todosCortes = (cli.historico_cortes || [])
+        .sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
 
-        const planoInfo = mapa[ass.plano_escolhido];
-        const limite = planoInfo?.limite || 4;
+      const planoInfo = temPlano ? mapa[ass.plano_escolhido] : null;
+      const ilimitado = Boolean(planoInfo?.ilimitado);
+      const limite = ilimitado ? 0 : planoInfo?.limite || 5;
+      const chavePagamento = `pagamento_plano_${empresaId}_${id}_${ass?.plano_escolhido || 'sem-plano'}`;
 
-        setDados({
-          nome: cli.nome,
-          whatsapp: cli.whatsapp,
-          iniciais: cli.nome.substring(0, 2).toUpperCase(),
-          alteracoesNome: cli.alteracoes_nome || 0,
-          status: statusAss,
-          limiteTotal: limite,
-          cortesRestantes: Math.max(0, limite - cortesDoMes.length),
-          vencimentoFormatado: ass.data_vencimento
-            ? new Date(ass.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-            : '--/--',
-          planoId: ass.plano_escolhido,
-          planoNome: planoInfo?.nome || 'Plano',
-          precoPlano: planoInfo?.preco || 0,
-          proximoPlano: ass.proximo_plano,
-          upgradePendente: ass.upgrade_pendente,
-        });
-      } else {
-        // pendente ou avulso: dados básicos
-        const planoInfo = temPlano ? mapa[ass.plano_escolhido] : null;
-        const limite = planoInfo?.limite || 4;
-        setDados({
-          nome: cli.nome,
-          whatsapp: cli.whatsapp,
-          iniciais: cli.nome.substring(0, 2).toUpperCase(),
-          alteracoesNome: cli.alteracoes_nome || 0,
-          status: statusAss || null,
-          limiteTotal: limite,
-          cortesRestantes: limite,
-          vencimentoFormatado: ass?.data_vencimento
-            ? new Date(ass.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-            : '--/--',
-          planoId: ass?.plano_escolhido || null,
-          planoNome: planoInfo?.nome || 'Plano',
-          precoPlano: planoInfo?.preco || 0,
-          upgradePendente: ass?.upgrade_pendente,
-        });
-      }
+      setHistoricoMes(tipo === 'ativo' ? cortesDoMes : []);
+      setHistoricoCompleto(todosCortes);
+      setPagamentoIniciado(statusAss === 'pendente' && localStorage.getItem(chavePagamento) === 'iniciado');
+      const dataCadastro = parseDataSupabase(vinculoEmpresa?.created_at);
+      setDados({
+        nome: cli.nome,
+        whatsapp: cli.whatsapp,
+        iniciais: cli.nome.substring(0, 2).toUpperCase(),
+        clienteDesde: dataCadastro.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+        alteracoesNome: cli.alteracoes_nome || 0,
+        status: statusAss || null,
+        ilimitado,
+        limiteTotal: limite,
+        cortesRestantes: ilimitado ? null : tipo === 'ativo' ? Math.max(0, limite - cortesDoMes.length) : limite,
+        vencimentoFormatado: ass?.data_vencimento
+          ? new Date(ass.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+          : '--/--',
+        planoId: ass?.plano_escolhido || null,
+        planoNome: planoInfo?.nome || 'Plano',
+        precoPlano: planoInfo?.preco || 0,
+        proximoPlano: ass?.proximo_plano,
+        upgradePendente: ass?.upgrade_pendente,
+      });
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }
+  }, [empresaId]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!empresaId) return;
+    if (!empresaSlug || empresaAtual?.slug !== empresaSlug) {
+      navigate('/');
+      return;
+    }
+
+    const clienteId = clienteIdAtual();
+    if (!clienteId) {
+      navigate('/');
+      return;
+    }
+    carregarDados(clienteId);
+  }, [navigate, authLoading, empresaId, empresaSlug, empresaAtual?.slug, clienteIdAtual, carregarDados]);
 
   const fecharModalAlerta = () => setConfigModalAlerta(p => ({ ...p, isOpen: false }));
   const exibirAlerta = (title, message) => setConfigModalAlerta({ isOpen: true, type: 'alert', title, message, onConfirm: null });
@@ -210,38 +250,39 @@ export default function ClienteDashboard() {
     setTimeout(() => setPixCopiado(false), 3000);
   };
 
-  // ---- Funções assinante ativo ----
   const alterarPlano = (novoPlanoId) => {
     if (novoPlanoId === dados.planoId) return;
     setMenuAberto(false);
-    if (dados.status !== 'ativa') { efetuarMudancaPlanoDireta(novoPlanoId); return; }
+    if (dados.status !== 'ativa') {
+      efetuarMudancaPlanoDireta(novoPlanoId);
+      return;
+    }
     const valorNovo = mapaPlanos[novoPlanoId].preco;
     const valorAtual = mapaPlanos[dados.planoId].preco;
     if (valorNovo < valorAtual) {
-      exibirConfirmacao('Agendar Mudança', `Você já possui o plano ${dados.planoNome} ativo. A mudança para ${mapaPlanos[novoPlanoId].nome} será agendada para seu próximo vencimento (${dados.vencimentoFormatado}).`, () => efetuarAgendamentoDowngrade(novoPlanoId));
+      exibirConfirmacao('Agendar Mudança', `A mudança para ${mapaPlanos[novoPlanoId].nome} será agendada para seu próximo vencimento (${dados.vencimentoFormatado}).`, () => efetuarAgendamentoDowngrade(novoPlanoId));
     } else {
-      const diferenca = valorNovo - valorAtual;
-      exibirConfirmacao('Fazer Upgrade', `Deseja mudar para ${mapaPlanos[novoPlanoId].nome}? Pague apenas a diferença de R$ ${diferenca},00 para liberar hoje mesmo.`, () => prepararUpgrade(novoPlanoId, diferenca));
+      prepararUpgrade(novoPlanoId, valorNovo - valorAtual);
     }
   };
 
   const cancelarAgendamento = () => {
     exibirConfirmacao('Cancelar Agendamento', `Deseja cancelar a mudança agendada e manter seu plano atual (${dados.planoNome})?`, async () => {
       fecharModalAlerta();
-      await supabase.from('assinaturas').update({ proximo_plano: null }).eq('cliente_id', getClienteId());
-      carregarDados(getClienteId());
+      await supabase.from('assinaturas').update({ proximo_plano: null }).eq('empresa_id', empresaId).eq('cliente_id', clienteIdAtual());
+      carregarDados(clienteIdAtual());
     });
   };
 
   const efetuarMudancaPlanoDireta = async (novoPlano) => {
-    await supabase.from('assinaturas').update({ plano_escolhido: novoPlano }).eq('cliente_id', getClienteId());
-    carregarDados(getClienteId());
+    await supabase.from('assinaturas').update({ plano_escolhido: novoPlano }).eq('empresa_id', empresaId).eq('cliente_id', clienteIdAtual());
+    carregarDados(clienteIdAtual());
   };
 
   const efetuarAgendamentoDowngrade = async (proximo) => {
     fecharModalAlerta();
-    await supabase.from('assinaturas').update({ proximo_plano: proximo }).eq('cliente_id', getClienteId());
-    carregarDados(getClienteId());
+    await supabase.from('assinaturas').update({ proximo_plano: proximo }).eq('empresa_id', empresaId).eq('cliente_id', clienteIdAtual());
+    carregarDados(clienteIdAtual());
   };
 
   const prepararUpgrade = (planoUpgrade, valorDiferenca) => {
@@ -252,42 +293,46 @@ export default function ClienteDashboard() {
 
   const abrirWhatsappPagamento = async () => {
     const isUpgrade = !!dados.valorUpgrade;
-    let mensagem = `Olá João! Me chamo *${dados.nome}*.\n`;
+    let mensagem = `Olá! Me chamo *${dados.nome}*.\n`;
     if (isUpgrade) {
-      mensagem += `Estou solicitando o Upgrade para o plano *${mapaPlanos[dados.planoUpgradeId].nome}*! 🚀\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
-      await supabase.from('assinaturas').update({ upgrade_pendente: dados.planoUpgradeId }).eq('cliente_id', getClienteId());
+      mensagem += `Estou solicitando o upgrade para o plano *${mapaPlanos[dados.planoUpgradeId].nome}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
+      await supabase.from('assinaturas').update({ upgrade_pendente: dados.planoUpgradeId }).eq('empresa_id', empresaId).eq('cliente_id', clienteIdAtual());
     } else {
       mensagem += `Estou solicitando a ativação do *Plano ${dados.planoNome}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
     }
+    if (!isUpgrade) {
+      localStorage.setItem(`pagamento_plano_${empresaId}_${clienteIdAtual()}_${dados.planoId || 'sem-plano'}`, 'iniciado');
+      setPagamentoIniciado(true);
+    }
     window.open(`https://wa.me/${WHATSAPP_JOAO}?text=${encodeURIComponent(mensagem)}`, '_blank');
     setModalCheckoutAberto(false);
-    if (isUpgrade) carregarDados(getClienteId());
+    if (isUpgrade) carregarDados(clienteIdAtual());
   };
 
   const salvarNovoNome = async () => {
     if (!novoNome.trim() || novoNome === dados.nome) return setEditandoNome(false);
-    await supabase.from('clientes').update({ nome: novoNome, alteracoes_nome: dados.alteracoesNome + 1 }).eq('id', getClienteId());
-    carregarDados(getClienteId());
+    await supabase.from('clientes').update({ nome: novoNome, alteracoes_nome: dados.alteracoesNome + 1 }).eq('empresa_id', empresaId).eq('id', clienteIdAtual());
+    carregarDados(clienteIdAtual());
     setEditandoNome(false);
   };
 
   const handleConfirmarCorte = () => {
-    if (dados.cortesRestantes <= 0) return exibirAlerta('Limite Atingido', 'Cortes esgotados este mês.');
+    if (!dados.ilimitado && dados.cortesRestantes <= 0) return exibirAlerta('Limite Atingido', 'Cortes esgotados este mês.');
     if (historicoMes.length > 0) {
       const dataUltimo = parseDataSupabase(historicoMes[0].created_at).toLocaleDateString('pt-BR');
-      if (dataUltimo === new Date().toLocaleDateString('pt-BR')) return exibirAlerta('Atenção', 'Você já registrou um corte hoje! Retorne amanhã.');
+      if (dataUltimo === new Date().toLocaleDateString('pt-BR')) return exibirAlerta('Atenção', 'Você já registrou um corte hoje. Retorne amanhã.');
     }
-    exibirConfirmacao('Confirmar Serviço', `Deseja registrar "${dados.planoNome}" agora?\n\n(Você poderá cancelar em até 15 minutos.)`, efetuarCorteNoBanco);
+    exibirConfirmacao('Confirmar Serviço', `Deseja registrar "${dados.planoNome}" agora?\n\nVocê poderá cancelar em até 15 minutos.`, efetuarCorteNoBanco);
   };
 
   const efetuarCorteNoBanco = async () => {
     if (salvandoCorte) return;
     setSalvandoCorte(true);
     try {
-      await supabase.from('historico_cortes').insert([{ cliente_id: getClienteId(), tipo_corte: dados.planoNome }]);
+      await supabase.from('historico_cortes').insert([{ cliente_id: clienteIdAtual(), empresa_id: empresaId, tipo_corte: dados.planoNome }]);
       fecharModalAlerta();
-      navigate('/confirmado');
-    } catch (e) {
+      navigate(montarRotaEmpresa(slugEmpresa, '/confirmado'));
+    } catch {
       fecharModalAlerta();
       setSalvandoCorte(false);
     }
@@ -298,10 +343,10 @@ export default function ClienteDashboard() {
       if (salvandoCorte) return;
       setSalvandoCorte(true);
       fecharModalAlerta();
-      const { error } = await supabase.from('historico_cortes').delete().eq('id', corteCancelavel.id);
+      const { error } = await supabase.from('historico_cortes').delete().eq('empresa_id', empresaId).eq('id', corteCancelavel.id);
       if (!error) {
-        await carregarDados(getClienteId());
-        exibirAlerta('Cancelado', 'Seu corte foi cancelado e o limite retornado.');
+        await carregarDados(clienteIdAtual());
+        exibirAlerta('Cancelado', 'Seu corte foi cancelado e o limite retornou.');
       } else {
         exibirAlerta('Erro', 'Não foi possível cancelar. O prazo de 15 minutos pode ter expirado.');
       }
@@ -311,14 +356,33 @@ export default function ClienteDashboard() {
 
   const handleFechamentoAgendamento = (resultado) => {
     setModalAgendamentoAberto(false);
+    setServicoAgendamentoInicial(null);
     if (resultado?.sucesso) {
-      exibirAlerta('Agendado!', 'Seu agendamento foi confirmado. Te esperamos na barbearia!');
-      carregarDados(getClienteId());
+      exibirAlerta('Agendado!', 'Seu agendamento foi confirmado. Te esperamos na barbearia.');
+      carregarDados(clienteIdAtual());
     }
-    if (resultado?.irParaPlanos) navigate('/planos');
+    if (resultado?.irParaPlanos) navigate(montarRotaEmpresa(slugEmpresa, '/planos'));
   };
 
   const fecharMenu = () => { setMenuAberto(false); setEditandoNome(false); };
+  const abrirPlanos = () => {
+    setMenuAberto(false);
+    navigate(montarRotaEmpresa(slugEmpresa, '/planos'));
+  };
+  const abrirAgendamento = () => {
+    setMenuAberto(false);
+    if (!agendamentoAtivo) {
+      exibirAlerta('Agendamento Indisponível', 'No momento esta barbearia não está aceitando agendamento online.');
+      return;
+    }
+    setServicoAgendamentoInicial(null);
+    setModalAgendamentoAberto(true);
+  };
+  const abrirCheckoutPlano = () => {
+    setMenuAberto(false);
+    setDados(prev => ({ ...prev, valorUpgrade: null }));
+    setModalCheckoutAberto(true);
+  };
   const handleLogout = async () => {
     await supabase.auth.signOut();
     localStorage.clear();
@@ -326,319 +390,263 @@ export default function ClienteDashboard() {
     navigate('/');
   };
 
-  if (loading || !dados) return (
-    <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-[#CEAA6B] font-bold uppercase tracking-widest text-xs">
-      Carregando...
-    </div>
-  );
-
-  // =============================================
-  // RENDER: CLIENTE AVULSO (agendamento ativo)
-  // =============================================
-  if (tipoCliente === 'avulso') {
-    return (
-      <div className="min-h-screen bg-[#09090b] text-white font-sans flex flex-col">
-        <ModalAlerta isOpen={configModalAlerta.isOpen} onClose={fecharModalAlerta} onConfirm={configModalAlerta.onConfirm} title={configModalAlerta.title} message={configModalAlerta.message} type={configModalAlerta.type} />
-        <ModalAgendamento
-          isOpen={modalAgendamentoAberto}
-          onClose={handleFechamentoAgendamento}
-          clienteId={getClienteId()}
-          clienteNome={dados.nome}
-          tipoCliente="avulso"
-        />
-
-        {/* HEADER */}
-        <div className="flex justify-between items-center px-5 pt-6 pb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 bg-[#CEAA6B] rounded-full"></div>
-            <span className="text-[#CEAA6B] text-[10px] font-bold tracking-[0.2em] uppercase">joao barber</span>
-          </div>
-          <button onClick={() => setMenuAberto(true)} className="w-10 h-10 rounded-full border border-[#CEAA6B]/30 flex items-center justify-center bg-[#121212] text-[#CEAA6B] font-bold text-sm">
-            {dados.iniciais}
-          </button>
-        </div>
-
-        <DrawerClientes isOpen={menuAberto} onClose={fecharMenu} dados={dados} editandoNome={editandoNome} setEditandoNome={setEditandoNome} novoNome={novoNome} setNovoNome={setNovoNome} salvarNovoNome={salvarNovoNome} LIMITE_ALTERACOES={LIMITE_ALTERACOES} planosDb={planosDb} alterarPlano={alterarPlano} cancelarAgendamento={cancelarAgendamento} onLogout={handleLogout} />
-
-        <div className="flex-1 overflow-y-auto px-5 pb-32 space-y-5">
-          {/* Saudação */}
-          <div className="pt-2">
-            <p className="text-zinc-500 text-xs">Bem-vindo de volta,</p>
-            <h1 className="text-2xl font-black text-white">{dados.nome.split(' ')[0]} 👋</h1>
-          </div>
-
-          {/* Serviços */}
-          <div>
-            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-3">Serviços disponíveis</p>
-            <div className="space-y-3">
-              {servicosAvulsos.length === 0 ? (
-                <div className="text-center py-10 border border-dashed border-[#27272a] rounded-2xl">
-                  <p className="text-zinc-600 text-xs italic">Nenhum serviço disponível no momento.</p>
-                </div>
-              ) : servicosAvulsos.map(s => (
-                <div key={s.id} className="bg-[#121212] border border-[#27272a] rounded-[20px] p-4">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <p className="font-black text-base text-white">{s.nome}</p>
-                      <p className="text-zinc-600 text-[10px] mt-0.5">{s.duracao_minutos} min</p>
-                    </div>
-                    <span className="text-[#CEAA6B] font-black text-xl">R$ {Number(s.preco).toFixed(0)}</span>
-                  </div>
-                  {/* Comparação com plano */}
-                  {melhorPlano && (
-                    <div className="bg-[#0f0a05] border border-[#CEAA6B]/15 rounded-xl p-3">
-                      <p className="text-[10px] text-zinc-500 leading-relaxed">
-                        Fazendo <span className="text-white font-bold">4x no mês</span> você gastaria{' '}
-                        <span className="line-through text-red-400/60">R$ {(Number(s.preco) * 4).toFixed(0)}</span>.{' '}
-                        No <span className="text-[#CEAA6B] font-bold">Plano {melhorPlano.nome}</span> você paga{' '}
-                        <span className="text-[#CEAA6B] font-bold">R$ {Number(melhorPlano.preco).toFixed(0)}/mês</span> e economiza{' '}
-                        <span className="text-emerald-400 font-bold">R$ {Math.max(0, (Number(s.preco) * 4) - Number(melhorPlano.preco)).toFixed(0)}</span>.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Banner plano mensal */}
-          <div className="bg-gradient-to-r from-[#1a120b] to-[#120d06] border border-[#CEAA6B]/25 rounded-[20px] p-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black text-[#CEAA6B] uppercase tracking-widest mb-1">Plano Mensal</p>
-              <p className="text-xs text-zinc-400 leading-relaxed">Economize com uma mensalidade fixa e ilimitada.</p>
-            </div>
-            <button onClick={() => navigate('/planos')} className="flex-shrink-0 bg-[#CEAA6B] text-black font-black text-[9px] uppercase tracking-widest px-4 py-2.5 rounded-xl active:scale-95 transition-all">
-              Ver Planos
-            </button>
-          </div>
-
-          {/* Histórico de agendamentos */}
-          {agendamentos.length > 0 && (
-            <div>
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-3">Meus agendamentos</p>
-              <div className="space-y-2">
-                {agendamentos.map((ag, i) => {
-                  const dataAg = ag.data_hora ? new Date(ag.data_hora) : null;
-                  const statusColor = ag.status === 'agendado' ? 'text-[#CEAA6B]' : ag.status === 'concluido' ? 'text-emerald-500' : 'text-red-500';
-                  return (
-                    <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-[#121212] border border-[#27272a]">
-                      <div>
-                        <p className="text-sm font-bold text-white">{ag.servicos?.nome || 'Serviço'}</p>
-                        <p className="text-[10px] text-zinc-500 mt-0.5">
-                          {dataAg ? `${dataAg.toLocaleDateString('pt-BR')} às ${dataAg.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Sem data'}
-                          {ag.barbeiros?.nome ? ` • ${ag.barbeiros.nome}` : ''}
-                        </p>
-                      </div>
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${statusColor}`}>{ag.status}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Botão fixo no rodapé */}
-        <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-[#09090b] via-[#09090b]/95 to-transparent">
-          <button
-            onClick={() => setModalAgendamentoAberto(true)}
-            className="w-full bg-[#CEAA6B] text-black font-black py-4 rounded-2xl uppercase tracking-wider text-sm active:scale-95 transition-all shadow-[0_0_30px_rgba(206,170,107,0.25)]"
-          >
-            Agendar Serviço
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // =============================================
-  // RENDER: CLIENTE COM PLANO (pendente ou ativo)
-  // =============================================
-  const isPendente = tipoCliente === 'pendente';
-
-  return (
-    <div className="min-h-screen bg-[#09090b] text-white p-5 font-sans flex flex-col relative overflow-hidden">
+  const modalBase = (
+    <>
       <ModalAlerta isOpen={configModalAlerta.isOpen} onClose={fecharModalAlerta} onConfirm={configModalAlerta.onConfirm} title={configModalAlerta.title} message={configModalAlerta.message} type={configModalAlerta.type} />
       {agendamentoAtivo && (
         <ModalAgendamento
           isOpen={modalAgendamentoAberto}
           onClose={handleFechamentoAgendamento}
-          clienteId={getClienteId()}
-          clienteNome={dados.nome}
-          tipoCliente="assinante"
+          clienteId={clienteIdAtual()}
+          clienteNome={dados?.nome}
+          tipoCliente={tipoCliente === 'ativo' ? 'assinante' : 'avulso'}
+          empresaId={empresaId}
+          planoCliente={tipoCliente === 'ativo' ? dados : null}
+          servicoInicialId={servicoAgendamentoInicial}
         />
       )}
+      <DrawerClientes
+        isOpen={menuAberto}
+        onClose={fecharMenu}
+        dados={dados}
+        editandoNome={editandoNome}
+        setEditandoNome={setEditandoNome}
+        novoNome={novoNome}
+        setNovoNome={setNovoNome}
+        salvarNovoNome={salvarNovoNome}
+        LIMITE_ALTERACOES={LIMITE_ALTERACOES}
+        planosDb={planosDb}
+        alterarPlano={alterarPlano}
+        cancelarAgendamento={cancelarAgendamento}
+        onLogout={handleLogout}
+        agendamentoAtivo={agendamentoAtivo}
+        tipoCliente={tipoCliente}
+        onAgendar={abrirAgendamento}
+        onVerPlanos={abrirPlanos}
+        onPagarPlano={abrirCheckoutPlano}
+        onHistoricoCompleto={() => {
+          setMenuAberto(false);
+          setModalHistoricoAberto(true);
+        }}
+      />
+    </>
+  );
 
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-6 mt-2">
-        <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 bg-[#CEAA6B] rounded-full"></div>
-          <span className="text-[#CEAA6B] text-[10px] font-bold tracking-[0.2em] uppercase">joao barber</span>
+  const checkoutModal = modalCheckoutAberto && (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-0">
+      <div className="client-device rounded-t-[28px] sm:rounded-[28px] min-h-0 max-h-[92vh] overflow-y-auto">
+        <div className="back-bar">
+          <button className="back-btn" onClick={() => setModalCheckoutAberto(false)}>
+            <Icon name="chevron" className="w-4 h-4 rotate-180" />
+          </button>
+          <span className="back-title">Pagamento</span>
         </div>
-        <button onClick={() => setMenuAberto(true)} className="w-10 h-10 rounded-full border border-[#CEAA6B]/30 flex items-center justify-center bg-[#121212] text-[#CEAA6B] font-bold text-sm">
-          {dados.iniciais}
-        </button>
-      </div>
 
-      <DrawerClientes isOpen={menuAberto} onClose={fecharMenu} dados={dados} editandoNome={editandoNome} setEditandoNome={setEditandoNome} novoNome={novoNome} setNovoNome={setNovoNome} salvarNovoNome={salvarNovoNome} LIMITE_ALTERACOES={LIMITE_ALTERACOES} planosDb={planosDb} alterarPlano={alterarPlano} cancelarAgendamento={cancelarAgendamento} onLogout={handleLogout} />
-
-      {/* BANNER PENDENTE */}
-      {isPendente && (
-        <div className="p-4 rounded-2xl border mb-5 bg-[#1a120b] border-orange-500/20">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_8px_#f97316]"></div>
-            <span className="text-[13px] font-black uppercase tracking-wide text-orange-500">
-              {dados.upgradePendente ? 'Upgrade em Análise' : 'Aguardando Ativação'}
-            </span>
-          </div>
-          <p className="text-zinc-400 text-[12px] leading-relaxed">
-            {dados.upgradePendente
-              ? `Aguardando aprovação do upgrade para ${mapaPlanos[dados.upgradePendente]?.nome}.`
-              : 'Efetue o pagamento para liberar seu acesso. Veja abaixo como ficará seu plano!'}
-          </p>
-        </div>
-      )}
-
-      {/* INFO CARDS */}
-      <div className={`bg-[#121212] border border-[#27272a] rounded-[20px] p-4 flex items-center gap-4 mb-4 ${isPendente ? 'opacity-60' : ''}`}>
-        <div className="w-14 h-14 rounded-full border border-[#CEAA6B]/30 flex items-center justify-center text-[#CEAA6B] font-medium text-lg">{dados.iniciais}</div>
-        <div>
-          <h2 className="font-bold text-base text-white">{dados.nome}</h2>
-          <div className="inline-block mt-1 border border-[#CEAA6B]/30 rounded-md px-2 py-1">
-            <p className="text-[#CEAA6B] text-[10px] font-medium uppercase">Plano {dados.planoNome}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className={`grid grid-cols-2 gap-3 mb-6 ${isPendente ? 'opacity-60' : ''}`}>
-        <div className="bg-[#121212] border border-[#27272a] p-4 rounded-[20px] flex flex-col items-center relative overflow-hidden">
-          {isPendente && <div className="absolute inset-0 bg-[#09090b]/40 backdrop-blur-[1px] rounded-[20px] z-10 flex items-center justify-center"><span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Bloqueado</span></div>}
-          <p className="text-zinc-500 text-[8px] font-bold uppercase tracking-widest mb-3">Cortes Restantes</p>
-          <div className="flex flex-wrap justify-center gap-1.5 mb-2">
-            {[...Array(dados.limiteTotal)].map((_, i) => (
-              <div key={i} className={`w-3.5 h-3.5 rounded-[3px] ${i < dados.cortesRestantes ? 'bg-[#CEAA6B]' : 'bg-[#27272a]'}`}></div>
-            ))}
-          </div>
-          <p className="text-2xl font-bold text-[#CEAA6B]">{dados.cortesRestantes} <span className="text-zinc-500 text-[10px] font-normal">de {dados.limiteTotal}</span></p>
-        </div>
-        <div className={`bg-[#121212] border border-[#27272a] p-4 rounded-[20px] flex flex-col items-center justify-center relative overflow-hidden`}>
-          {isPendente && <div className="absolute inset-0 bg-[#09090b]/40 backdrop-blur-[1px] rounded-[20px] z-10 flex items-center justify-center"><span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Bloqueado</span></div>}
-          <p className="text-zinc-500 text-[8px] font-bold uppercase tracking-widest mb-2">Vencimento</p>
-          <p className="text-[26px] font-bold text-white">{dados.vencimentoFormatado}</p>
-        </div>
-      </div>
-
-      {/* HISTÓRICO */}
-      <div className={`mb-6 flex-grow flex flex-col min-h-0 ${isPendente ? 'opacity-60 pointer-events-none' : ''}`}>
-        <div className="flex justify-between items-end mb-3 pl-1">
-          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Histórico do mês</p>
-          {historicoMes.length > 0 && (
-            <p className="text-[#CEAA6B] text-[9px] font-bold uppercase tracking-widest bg-[#CEAA6B]/10 px-2 py-0.5 rounded">
-              {historicoMes.length} {historicoMes.length === 1 ? 'corte' : 'cortes'}
-            </p>
-          )}
-        </div>
-        <div className="space-y-2 overflow-y-auto pr-1 pb-1 max-h-[200px]">
-          {historicoMes.length > 0 ? historicoMes.map((c, i) => {
-            const dataCorte = parseDataSupabase(c.created_at);
-            return (
-              <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-[#121212] border border-[#27272a]">
-                <div className="flex items-center gap-4">
-                  <div className="w-9 h-9 rounded-full bg-[#1a120b] border border-[#CEAA6B]/20 flex items-center justify-center text-[#CEAA6B]">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-white">{c.tipo_corte}</p>
-                    <div className="flex items-center gap-2 text-[10px] text-zinc-500 mt-1">
-                      <span>{dataCorte.toLocaleDateString('pt-BR')}</span>
-                      <span>•</span>
-                      <span>{dataCorte.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <div className="w-2 h-2 bg-[#22c55e] rounded-full shadow-[0_0_6px_rgba(34,197,94,0.6)]"></div>
-                  <span className="text-[8px] text-zinc-600 font-bold uppercase tracking-wider">Feito</span>
-                </div>
+        <div className="scroll" style={{ paddingTop: 12 }}>
+          <div className="card">
+            <div className="stat-lbl">PLANO SELECIONADO</div>
+            <div className="flex items-center justify-between mt-2 gap-3">
+              <div className="text-white text-sm font-semibold">
+                {dados.valorUpgrade ? `Upgrade para ${mapaPlanos[dados.planoUpgradeId]?.nome}` : `Plano ${dados.planoNome}`}
               </div>
-            );
-          }) : (
-            <div className="p-6 text-center border border-dashed border-[#27272a] rounded-2xl">
-              <p className="text-zinc-600 text-xs italic">
-                {isPendente ? 'Ative seu plano para começar a registrar cortes.' : 'Nenhum serviço registrado neste mês.'}
-              </p>
+              <div className="text-[#d5b451] text-[22px] font-black">
+                R${dados.valorUpgrade || dados.precoPlano}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* BOTÃO PRINCIPAL */}
-      <div className="mt-4 space-y-2">
-        {isPendente ? (
-          <button onClick={() => { setDados(prev => ({ ...prev, valorUpgrade: null })); setModalCheckoutAberto(true); }} className="w-full bg-[#CEAA6B] text-black font-bold py-4 rounded-2xl active:scale-95 transition-all">
-            Pagar e Ativar Plano
-          </button>
-        ) : corteCancelavel ? (
-          <button disabled={salvandoCorte} onClick={handleCancelarCorte} className="w-full bg-red-500/10 text-red-500 border border-red-500/50 font-bold py-4 rounded-2xl transition-all">
-            {salvandoCorte ? 'Cancelando...' : 'Cancelar Corte (Até 15 min)'}
-          </button>
-        ) : (
-          <>
-            <button disabled={dados.cortesRestantes === 0 || salvandoCorte} onClick={handleConfirmarCorte} className="w-full bg-[#CEAA6B] text-black font-bold py-4 rounded-2xl transition-all disabled:opacity-50">
-              {salvandoCorte ? 'Registrando...' : dados.cortesRestantes > 0 ? 'Confirmar Serviço' : 'Limite Esgotado'}
-            </button>
-            {agendamentoAtivo && (
-              <button onClick={() => setModalAgendamentoAberto(true)} className="w-full bg-transparent border border-[#CEAA6B]/40 text-[#CEAA6B] font-bold py-3 rounded-2xl text-sm transition-all active:scale-95">
-                Agendar Horário
+          <div className="pix-box">
+            <div className="pix-title">
+              <div className="pix-title-ico">
+                <Icon name="money" className="w-4 h-4" />
+              </div>
+              <div className="text-white text-sm font-semibold">Pagar via Pix</div>
+            </div>
+
+            <div className="pix-key">
+              <span>{CHAVE_PIX}</span>
+              <button type="button" className="pix-copy" onClick={copiarPix}>
+                <Icon name="copy" className="w-3 h-3" />
+                {pixCopiado ? 'Copiado!' : 'Copiar'}
               </button>
-            )}
-          </>
-        )}
-      </div>
+            </div>
 
-      {/* MODAL DE CHECKOUT */}
-      {modalCheckoutAberto && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-0">
-          <div className="bg-[#121212] border border-[#27272a] rounded-t-[32px] sm:rounded-[32px] w-full max-w-[400px] p-6 pb-10 animate-[slideUp_0.3s_ease-out]">
-            <div className="flex justify-between items-start mb-6">
+            <ul className="pix-steps">
+              <li><div className="pix-n">1</div>Copie a chave Pix acima</li>
+              <li><div className="pix-n">2</div>Abra seu banco e faça a transferência</li>
+              <li><div className="pix-n">3</div>Tire print do comprovante</li>
+              <li><div className="pix-n">4</div>Envie pelo botão abaixo no WhatsApp</li>
+            </ul>
+          </div>
+
+          <button className="btn primary flex items-center justify-center gap-2" onClick={abrirWhatsappPagamento}>
+            <Icon name="whatsapp" className="w-4 h-4" />
+            Enviar comprovante no WhatsApp
+          </button>
+
+          <div className="alert warn">
+            <Icon name="info" className="w-5 h-5 flex-shrink-0" />
+            <div className="alert-txt">
+              Seu plano será ativado em até <strong>24h</strong> após a confirmação do pagamento pelo barbeiro.
+            </div>
+          </div>
+
+          <div className="sec">OUTRAS FORMAS</div>
+          <div className="card">
+            <div className="flex items-center gap-3">
+              <Icon name="store" className="w-5 h-5 text-zinc-500" />
               <div>
-                <h3 className="text-xl font-bold text-white mb-1">Pagamento</h3>
-                <p className="text-[#CEAA6B] font-bold">
-                  {dados.valorUpgrade ? `Upgrade para ${mapaPlanos[dados.planoUpgradeId]?.nome}` : `Plano ${dados.planoNome}`}
-                  {' '}• R$ {dados.valorUpgrade || dados.precoPlano},00
-                </p>
+                <div className="text-[#d8d3c8] text-sm font-semibold">Cartão ou dinheiro</div>
+                <div className="text-zinc-500 text-xs mt-0.5">Pagamento presencial na barbearia</div>
               </div>
-              <button onClick={() => setModalCheckoutAberto(false)} className="w-8 h-8 flex items-center justify-center bg-[#27272a] text-zinc-400 rounded-full">✕</button>
             </div>
-            <div className="grid grid-cols-3 gap-2 mb-6">
-              {['pix', 'cartao', 'dinheiro'].map(m => (
-                <button key={m} onClick={() => setMetodoPagamento(m)} className={`py-3 rounded-xl border text-[10px] font-bold uppercase transition-all ${metodoPagamento === m ? 'border-[#CEAA6B] bg-[#CEAA6B]/10 text-[#CEAA6B]' : 'border-[#27272a] bg-[#09090b] text-zinc-500'}`}>{m}</button>
-              ))}
-            </div>
-            {metodoPagamento === 'pix' ? (
-              <>
-                <div className="bg-[#09090b] border border-[#27272a] rounded-2xl p-4 mb-4 flex gap-2 items-center">
-                  <input readOnly value={CHAVE_PIX} className="flex-1 bg-transparent text-[#25D366] text-sm outline-none" />
-                  <button onClick={copiarPix} className="text-xs font-bold text-white bg-[#27272a] px-3 py-2 rounded-lg">{pixCopiado ? 'Copiado!' : 'Copiar'}</button>
+          </div>
+
+          <button onClick={() => setModalCheckoutAberto(false)} className="btn ghost">Fazer depois</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const historicoModal = modalHistoricoAberto && (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-0">
+      <div className="client-device rounded-t-[28px] sm:rounded-[28px] min-h-0 max-h-[92vh] overflow-y-auto">
+        <div className="back-bar">
+          <button className="back-btn" onClick={() => setModalHistoricoAberto(false)}>
+            <Icon name="chevron" className="w-4 h-4 rotate-180" />
+          </button>
+          <span className="back-title">Historico</span>
+        </div>
+
+        <div className="scroll" style={{ paddingTop: 12 }}>
+          <div className="sec">CORTES</div>
+          <div className="space-y-2">
+            {historicoCompleto.length > 0 ? historicoCompleto.map((corte) => {
+              const dataCorte = parseDataSupabase(corte.created_at);
+              return (
+                <div key={corte.id} className="bg-[#1b1b1b] border border-[#333] rounded-[10px] p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-white">{corte.tipo_corte}</p>
+                    <p className="text-[10px] text-zinc-500 mt-1">
+                      {dataCorte.toLocaleDateString('pt-BR')} as {dataCorte.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-widest">Feito</span>
                 </div>
-                <button onClick={abrirWhatsappPagamento} className="w-full bg-[#25D366] text-black font-bold py-4 rounded-xl mb-3">Enviar Comprovante</button>
-              </>
-            ) : (
-              <div className="mb-4 text-center">
-                <p className="text-zinc-400 text-xs leading-relaxed mb-4">
-                  O pagamento via {metodoPagamento === 'cartao' ? 'cartão' : 'dinheiro'} deve ser realizado diretamente com o João na barbearia.
-                </p>
-                <button onClick={abrirWhatsappPagamento} className="w-full bg-[#CEAA6B] text-black font-bold py-4 rounded-xl mb-3">
-                  Avisar João no WhatsApp
-                </button>
+              );
+            }) : (
+              <div className="p-6 text-center border border-dashed border-[#333] rounded-[12px]">
+                <p className="text-zinc-600 text-xs italic">Nenhum corte registrado.</p>
               </div>
             )}
-            <button onClick={() => { setModalCheckoutAberto(false); setMenuAberto(true); }} className="w-full text-zinc-500 text-xs font-bold uppercase py-2 hover:text-white transition-colors">Escolher outro plano</button>
+          </div>
+
+          <div className="sec">AGENDAMENTOS</div>
+          <div className="space-y-2">
+            {agendamentos.length > 0 ? agendamentos.map((agendamento, index) => {
+              const dataAgendamento = agendamento.data_hora ? new Date(agendamento.data_hora) : null;
+              return (
+                <div key={agendamento.id || index} className="bg-[#1b1b1b] border border-[#333] rounded-[10px] p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-white">{agendamento.servicos?.nome || 'Servico'}</p>
+                    <p className="text-[10px] text-zinc-500 mt-1">
+                      {dataAgendamento
+                        ? `${dataAgendamento.toLocaleDateString('pt-BR')} as ${dataAgendamento.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                        : 'Sem data'}
+                      {agendamento.barbeiros?.nome ? ` - ${agendamento.barbeiros.nome}` : ''}
+                    </p>
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-[#d5b451]">{agendamento.status}</span>
+                </div>
+              );
+            }) : (
+              <div className="p-6 text-center border border-dashed border-[#333] rounded-[12px]">
+                <p className="text-zinc-600 text-xs italic">Nenhum agendamento registrado.</p>
+              </div>
+            )}
           </div>
         </div>
-      )}
-
-      <style dangerouslySetInnerHTML={{ __html: `@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }` }} />
+      </div>
     </div>
+  );
+
+  if (loading || !dados) {
+    return (
+      <div className="min-h-screen bg-[#090909] flex items-center justify-center text-[#d5b451] font-bold uppercase tracking-widest text-xs">
+        Carregando...
+      </div>
+    );
+  }
+
+  const abrirAgendamentoSemPlano = (servicoId = null) => {
+    if (!agendamentoAtivo) {
+      exibirAlerta('Agendamento indisponível', 'No momento esta barbearia não está aceitando agendamento online para clientes sem plano ativo.');
+      return;
+    }
+    setServicoAgendamentoInicial(servicoId);
+    setModalAgendamentoAberto(true);
+  };
+
+  const abrirAgendamentoAvulsoPendente = (servicoId = null) => {
+    if (!agendamentoAtivo) {
+      exibirAlerta('Agendamento indisponível', 'No momento esta barbearia não está aceitando agendamento online.');
+      return;
+    }
+    setServicoAgendamentoInicial(servicoId);
+    setModalAgendamentoAberto(true);
+  };
+
+  const renderDashboardPorTipo = () => {
+    if (tipoCliente === 'avulso') {
+      return (
+        <ClienteDashboardAvulso
+          dados={dados}
+          servicosAvulsos={servicosAvulsos}
+          agendamentos={agendamentos}
+          onAbrirPlanos={abrirPlanos}
+          onAbrirAgendamentoSemPlano={abrirAgendamentoSemPlano}
+        />
+      );
+    }
+
+    if (tipoCliente === 'pendente') {
+      return (
+        <ClienteDashboardPendente
+          dados={dados}
+          onEnviarComprovante={abrirWhatsappPagamento}
+          onTrocarPlano={abrirPlanos}
+          onVerChavePix={abrirCheckoutPlano}
+          onAgendarAvulso={abrirAgendamentoAvulsoPendente}
+          pagamentoIniciado={pagamentoIniciado}
+          agendamentos={agendamentos}
+        />
+      );
+    }
+
+    return (
+      <ClienteDashboardAtivo
+        dados={dados}
+        historicoMes={historicoMes}
+        corteCancelavel={corteCancelavel}
+        salvandoCorte={salvandoCorte}
+        agendamentoAtivo={agendamentoAtivo}
+        onCancelarCorte={handleCancelarCorte}
+        onAbrirAgendamento={() => {
+          setServicoAgendamentoInicial(null);
+          setModalAgendamentoAberto(true);
+        }}
+        onConfirmarCorte={handleConfirmarCorte}
+      />
+    );
+  };
+
+  return (
+    <ClienteShell onMenu={() => setMenuAberto(true)} empresaNome={empresaNome}>
+      {modalBase}
+      {renderDashboardPorTipo()}
+      {checkoutModal}
+      {historicoModal}
+      <style dangerouslySetInnerHTML={{ __html: '@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }' }} />
+    </ClienteShell>
   );
 }

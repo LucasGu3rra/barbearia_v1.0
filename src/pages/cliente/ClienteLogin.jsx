@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
-import logo from '../../assets/logo.png'; // IMPORTANDO A LOGO AQUI
+import { getEmpresaPorSlug, montarRotaEmpresa } from '../../services/empresa';
+import logo from '../../assets/logo.png';
 
 export default function ClienteLogin() {
   const [email, setEmail] = useState('');
@@ -9,61 +10,74 @@ export default function ClienteLogin() {
   const [verSenha, setVerSenha] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { empresaSlug } = useParams();
 
-const handleLogin = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password: senha,
       });
 
       if (authError) throw new Error('E-mail ou senha incorretos.');
 
-      // APAGAMOS TODO O RESTO! Não coloque "navigate" aqui.
-      // Quando o signIn for um sucesso, o AuthContext percebe sozinho, 
-      // faz a checagem no banco e o App.jsx te redireciona automaticamente!
+      const userId = authData.user?.id;
+      if (userId && empresaSlug) {
+        const empresa = await getEmpresaPorSlug(empresaSlug);
+        if (!empresa) throw new Error('Barbearia não encontrada ou inativa.');
 
-    } catch (error) {
+        const { data: vinculo } = await supabase
+          .from('usuarios_empresas')
+          .select('papel')
+          .eq('user_id', userId)
+          .eq('empresa_id', empresa.id)
+          .maybeSingle();
+
+        if (!vinculo?.papel) {
+          await supabase.auth.signOut();
+          localStorage.clear();
+          sessionStorage.clear();
+          throw new Error('Essa conta não pertence a esta barbearia.');
+        }
+
+        localStorage.setItem('clienteId', userId);
+        sessionStorage.setItem('clienteId', userId);
+      }    } catch (error) {
       alert(error.message);
-      setLoading(false); // Só volta o botão ao normal se der erro
+      setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col items-center justify-center px-6 font-sans">
-      
-      {/* 1. LOGO FORA DO CONTAINER */}
       <div className="mb-8 flex justify-center">
-        <img 
-          src={logo} 
-          alt="Barbearia do João" 
+        <img
+          src={logo}
+          alt="Barbearia do João"
           className="w-32 h-32 rounded-full border-[3px] border-[#CEAA6B]/40 shadow-[0_0_20px_rgba(206,170,107,0.15)] object-cover"
         />
       </div>
 
-      {/* CONTAINER PRINCIPAL DO FORMULÁRIO */}
       <div className="w-full max-w-[360px] bg-[#121212] border border-[#27272a] rounded-[28px] p-8 shadow-2xl">
-        
-        {/* 2. NOME BEM-VINDO NO CONTAINER */}
         <header className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-white">Bem-vindo</h1>
           <p className="text-zinc-500 text-xs mt-1">Faça login para acessar sua conta</p>
         </header>
-        
+
         <form onSubmit={handleLogin} className="space-y-5">
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">E-mail</label>
-            <input required type="email" className="w-full bg-[#09090b] border border-[#27272a] rounded-xl p-4 outline-none focus:border-[#CEAA6B]" 
+            <input required type="email" className="w-full bg-[#09090b] border border-[#27272a] rounded-xl p-4 outline-none focus:border-[#CEAA6B]"
               placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Senha</label>
             <div className="relative">
-              <input required type={verSenha ? "text" : "password"} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl p-4 outline-none focus:border-[#CEAA6B]" 
+              <input required type={verSenha ? "text" : "password"} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl p-4 outline-none focus:border-[#CEAA6B]"
                 placeholder="••••••" value={senha} onChange={e => setSenha(e.target.value)} />
               <button type="button" onClick={() => setVerSenha(!verSenha)} className="absolute right-4 top-4 text-zinc-600">
                 {verSenha ? (
@@ -80,21 +94,19 @@ const handleLogin = async (e) => {
           </button>
         </form>
 
-        {/* 3. LINKS REORGANIZADOS (Cadastro primeiro, Esqueci a senha embaixo) */}
         <div className="mt-8 flex flex-col items-center gap-4">
-          <button onClick={() => navigate('/cadastro')} className="w-full text-zinc-500 text-sm">
+          <button onClick={() => navigate(montarRotaEmpresa(empresaSlug, '/cadastro'))} className="w-full text-zinc-500 text-sm">
             Ainda não tem conta? <span className="text-[#CEAA6B] font-bold underline">Cadastre-se</span>
           </button>
 
-          <button 
+          <button
             type="button"
-            onClick={() => navigate('/esqueci-senha')} 
+            onClick={() => navigate(montarRotaEmpresa(empresaSlug, '/esqueci-senha'))}
             className="text-zinc-600 hover:text-white text-xs font-bold transition-colors"
           >
             Esqueceu sua senha?
           </button>
         </div>
-
       </div>
     </div>
   );

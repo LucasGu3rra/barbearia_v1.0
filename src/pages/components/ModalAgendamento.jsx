@@ -1,22 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabase';
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-
-const gerarHorarios = () => {
-  const h = [];
-  for (let i = 8; i < 19; i++) {
-    h.push(`${String(i).padStart(2, '0')}:00`);
-    h.push(`${String(i).padStart(2, '0')}:30`);
-  }
-  return h;
-};
 
 const gerarProximosDias = () => {
   const dias = [];
   const hoje = new Date();
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 7; i++) {
     const d = new Date(hoje);
     d.setDate(hoje.getDate() + i);
     dias.push(d);
@@ -24,433 +15,575 @@ const gerarProximosDias = () => {
   return dias;
 };
 
-const HORARIOS = gerarHorarios();
-const DIAS = gerarProximosDias();
+const mesmaData = (a, b) => a && b && a.toDateString() === b.toDateString();
 
-// Seção cascata individual
-function Secao({ titulo, concluido, ativo, children, onEditar }) {
+const normalizarTexto = (valor = '') => String(valor)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .trim();
+
+const encontrarServicoDoPlano = (servicos, planoCliente) => {
+  if (!planoCliente) return null;
+  const planoSlug = normalizarTexto(planoCliente.planoId);
+  const planoNome = normalizarTexto(planoCliente.planoNome);
+
+  return servicos.find((servico) => {
+    const nome = normalizarTexto(servico.nome);
+    if (planoSlug === 'completo') return nome.includes('cabelo') && nome.includes('barba');
+    if (planoSlug === 'cabelo') return nome.includes('cabelo') && !nome.includes('barba');
+    if (planoSlug === 'barba') return nome.includes('barba') && !nome.includes('cabelo');
+    return nome === planoNome || nome.includes(planoSlug);
+  }) || null;
+};
+
+const gerarHorarios = (inicio = '08:00', fim = '19:00', pausaInicio = null, pausaFim = null, data = null) => {
+  const horarios = [];
+  const [hi, mi] = inicio.split(':').map(Number);
+  const [hf, mf] = fim.split(':').map(Number);
+  const inicioMin = hi * 60 + mi;
+  const fimMin = hf * 60 + mf;
+  const pausaIniMin = pausaInicio ? pausaInicio.split(':').map(Number).reduce((h, m) => h * 60 + m) : null;
+  const pausaFimMin = pausaFim ? pausaFim.split(':').map(Number).reduce((h, m) => h * 60 + m) : null;
+  const agora = new Date();
+  const mesmoDia = data && data.toDateString() === agora.toDateString();
+
+  for (let min = inicioMin; min < fimMin; min += 30) {
+    if (pausaIniMin !== null && pausaFimMin !== null && min >= pausaIniMin && min < pausaFimMin) continue;
+    if (mesmoDia && min <= agora.getHours() * 60 + agora.getMinutes()) continue;
+    horarios.push(`${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`);
+  }
+
+  return horarios;
+};
+
+function Icon({ name, className = '' }) {
+  const icons = {
+    arrow: <path d="m15 18-6-6 6-6" />,
+    check: <path d="M20 6 9 17l-5-5" />,
+    scissors: <><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4 8.1 15.9" /><path d="M14.5 14.5 20 20" /><path d="M8.1 8.1 12 12" /></>,
+    tool: <path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2.8-2.8 2.2-2.6z" />,
+    stars: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15z" /></>,
+    users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
+    clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  };
+
   return (
-    <div className={`rounded-[20px] border transition-all duration-300 overflow-hidden ${ativo ? 'border-[#CEAA6B]/40 bg-[#121212]' : concluido ? 'border-[#27272a] bg-[#0d0d0d]' : 'border-[#1f1f1f] bg-[#0a0a0a] opacity-40'}`}>
-      <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${concluido ? 'bg-[#CEAA6B]' : ativo ? 'border-2 border-[#CEAA6B]' : 'border border-[#27272a]'}`}>
-            {concluido && (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            )}
-          </div>
-          <span className={`text-[11px] font-black uppercase tracking-widest ${ativo ? 'text-white' : concluido ? 'text-zinc-400' : 'text-zinc-700'}`}>{titulo}</span>
-        </div>
-        {concluido && !ativo && (
-          <button onClick={onEditar} className="text-[9px] text-[#CEAA6B] font-bold uppercase tracking-widest hover:underline">Editar</button>
-        )}
-      </div>
-      {ativo && <div className="px-4 pb-4">{children}</div>}
-    </div>
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {icons[name] || icons.scissors}
+    </svg>
   );
 }
 
-export default function ModalAgendamento({ isOpen, onClose, clienteId, clienteNome, tipoCliente }) {
+export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoCliente, empresaId, planoCliente = null, servicoInicialId = null }) {
+  const [step, setStep] = useState(1);
+  const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
+  const [confirmado, setConfirmado] = useState(false);
 
-  // Dados do banco
   const [filiais, setFiliais] = useState([]);
-  const [barbeiros, setBarbeiros] = useState([]);
   const [servicos, setServicos] = useState([]);
-  const [melhorPlano, setMelhorPlano] = useState(null);
-  const [carregando, setCarregando] = useState(true);
+  const [barbeiros, setBarbeiros] = useState([]);
+  const [horariosFuncionamento, setHorariosFuncionamento] = useState([]);
 
-  // Seleções
   const [filialSelecionada, setFilialSelecionada] = useState(null);
   const [servicoSelecionado, setServicoSelecionado] = useState(null);
   const [dataSelecionada, setDataSelecionada] = useState(null);
   const [horarioSelecionado, setHorarioSelecionado] = useState(null);
   const [barbeiroSelecionado, setBarbeiroSelecionado] = useState(null);
+  const [horariosIndisponiveis, setHorariosIndisponiveis] = useState(new Set());
 
-  // Controle de qual seção está ativa
-  const [etapaAtiva, setEtapaAtiva] = useState(null);
+  const isAssinante = tipoCliente === 'assinante';
 
-  const scrollRef = useRef(null);
-
-  // Lógica de etapas
-  const exibirFilial = filiais.length > 1;
-  const exibirBarbeiro = barbeiros.length > 1;
-
-  const etapas = (() => {
-    const lista = [];
-    if (exibirFilial) lista.push('filial');
-    lista.push('servico');
-    lista.push('data');
-    if (exibirBarbeiro) lista.push('barbeiro');
-    lista.push('confirmacao');
-    return lista;
-  })();
-
-  const proximaEtapa = (atual) => {
-    const idx = etapas.indexOf(atual);
-    return idx < etapas.length - 1 ? etapas[idx + 1] : null;
-  };
-
-  const etapaConcluida = (etapa) => {
-    if (etapa === 'filial') return !!filialSelecionada;
-    if (etapa === 'servico') return !!servicoSelecionado;
-    if (etapa === 'data') return !!(dataSelecionada && horarioSelecionado);
-    if (etapa === 'barbeiro') return !!barbeiroSelecionado;
-    return false;
-  };
-
-  const barbeirosFiltrados = filialSelecionada
-    ? barbeiros.filter(b => b.filial_id === filialSelecionada.id)
-    : barbeiros;
-
-  useEffect(() => {
-    if (isOpen) {
-      setFilialSelecionada(null);
-      setServicoSelecionado(null);
-      setDataSelecionada(null);
-      setHorarioSelecionado(null);
-      setBarbeiroSelecionado(null);
-      setErro('');
-      carregarDados();
-    }
-  }, [isOpen]);
-
-  // Scroll suave quando nova seção abre
-  useEffect(() => {
-    if (etapaAtiva && scrollRef.current) {
-      setTimeout(() => {
-        const el = scrollRef.current?.querySelector(`[data-etapa="${etapaAtiva}"]`);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 100);
-    }
-  }, [etapaAtiva]);
-
-  const carregarDados = async () => {
+  const carregarDados = useCallback(async () => {
     setCarregando(true);
-    const [
-      { data: fils },
-      { data: barbs },
-      { data: servs },
-      { data: planos },
-    ] = await Promise.all([
-      supabase.from('filiais').select('*').eq('ativa', true),
-      supabase.from('barbeiros').select('*').eq('ativo', true),
-      supabase.from('servicos').select('*').eq('ativo', true).order('created_at', { ascending: true }),
-      supabase.from('planos').select('*').eq('ativo', true),
+    const [{ data: fils }, { data: servs }, { data: barbs }, { data: horarios }] = await Promise.all([
+      supabase.from('filiais').select('*').eq('empresa_id', empresaId).eq('ativa', true),
+      supabase.from('servicos').select('*, servico_categorias(nome), servico_subcategorias(nome)').eq('empresa_id', empresaId).eq('ativo', true).is('deleted_at', null).order('created_at', { ascending: true }),
+      supabase.from('barbeiros').select('*').eq('empresa_id', empresaId).eq('ativo', true),
+      supabase.from('horarios_funcionamento').select('*').eq('empresa_id', empresaId),
     ]);
 
     const listaFiliais = fils || [];
+    const listaServicos = servs || [];
     const listaBarbeiros = barbs || [];
-    setFiliais(listaFiliais);
-    setBarbeiros(listaBarbeiros);
-    setServicos(servs || []);
+    const servicoInicial = servicoInicialId
+      ? listaServicos.find(servico => servico.id === servicoInicialId)
+      : null;
+    const servicoPlano = isAssinante ? encontrarServicoDoPlano(listaServicos, planoCliente) : null;
 
-    if (planos?.length > 0) {
-      setMelhorPlano(planos.reduce((a, b) => a.preco < b.preco ? a : b));
+    setFiliais(listaFiliais);
+    setServicos(listaServicos);
+    setBarbeiros(listaBarbeiros);
+    setHorariosFuncionamento(horarios || []);
+    setFilialSelecionada(listaFiliais[0] || null);
+    setBarbeiroSelecionado(null);
+    setServicoSelecionado(servicoInicial || servicoPlano || null);
+    setStep(servicoInicial || servicoPlano ? 2 : 1);
+    setCarregando(false);
+  }, [empresaId, isAssinante, planoCliente, servicoInicialId]);
+
+  useEffect(() => {
+    if (!isOpen || !empresaId) return;
+
+    setStep(1);
+    setErro('');
+    setConfirmado(false);
+    setServicoSelecionado(null);
+    setDataSelecionada(null);
+    setHorarioSelecionado(null);
+    setBarbeiroSelecionado(null);
+    carregarDados();
+  }, [isOpen, empresaId, carregarDados]);
+
+  const regraFuncionamentoDoDia = useCallback((data) => {
+    if (!data) return null;
+    const filialId = filialSelecionada?.id || filiais[0]?.id;
+    return horariosFuncionamento.find(h => h.filial_id === filialId && h.dia_semana === data.getDay()) || null;
+  }, [filialSelecionada, filiais, horariosFuncionamento]);
+
+  const datasDisponiveis = useMemo(() => gerarProximosDias().filter((data) => {
+    const regra = regraFuncionamentoDoDia(data);
+    return regra?.aberto && regra.horario_inicio && regra.horario_fim;
+  }), [regraFuncionamentoDoDia]);
+
+  useEffect(() => {
+    if (!dataSelecionada) return;
+    const dataAindaDisponivel = datasDisponiveis.some(data => mesmaData(data, dataSelecionada));
+    if (!dataAindaDisponivel) {
+      setDataSelecionada(null);
+      setHorarioSelecionado(null);
+    }
+  }, [dataSelecionada, datasDisponiveis]);
+
+  const horariosDoDia = useMemo(() => {
+    if (!dataSelecionada) return [];
+    const regra = regraFuncionamentoDoDia(dataSelecionada);
+    if (!regra?.aberto || !regra.horario_inicio || !regra.horario_fim) return [];
+
+    return gerarHorarios(
+      regra.horario_inicio.substring(0, 5),
+      regra.horario_fim.substring(0, 5),
+      regra.intervalo_inicio?.substring(0, 5),
+      regra.intervalo_fim?.substring(0, 5),
+      dataSelecionada
+    );
+  }, [dataSelecionada, regraFuncionamentoDoDia]);
+
+  const barbeirosDaFilial = useMemo(() => {
+    if (!filialSelecionada?.id) return barbeiros;
+    return barbeiros.filter(barbeiro => barbeiro.filial_id === filialSelecionada.id);
+  }, [barbeiros, filialSelecionada]);
+
+  useEffect(() => {
+    if (!isOpen || !empresaId || !filialSelecionada?.id || !dataSelecionada) {
+      setHorariosIndisponiveis(new Set());
+      return;
     }
 
-    // Define a primeira etapa ativa
-    const primeiraEtapa = listaFiliais.length > 1 ? 'filial' : 'servico';
+    let cancelado = false;
 
-    // Auto-seleciona filial se só tiver 1
-    if (listaFiliais.length === 1) setFilialSelecionada(listaFiliais[0]);
+    const carregarHorariosOcupados = async () => {
+      const inicioDia = new Date(dataSelecionada);
+      inicioDia.setHours(0, 0, 0, 0);
+      const fimDia = new Date(dataSelecionada);
+      fimDia.setHours(23, 59, 59, 999);
 
-    setEtapaAtiva(primeiraEtapa);
-    setCarregando(false);
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select('data_hora')
+        .eq('empresa_id', empresaId)
+        .eq('filial_id', filialSelecionada.id)
+        .gte('data_hora', inicioDia.toISOString())
+        .lte('data_hora', fimDia.toISOString())
+        .neq('status', 'cancelado');
+
+      if (cancelado) return;
+
+      if (error) {
+        console.error(error);
+        setHorariosIndisponiveis(new Set());
+        return;
+      }
+
+      const totalPorHorario = new Map();
+      (data || []).forEach((agendamento) => {
+        const dataHora = new Date(agendamento.data_hora);
+        const hora = `${String(dataHora.getHours()).padStart(2, '0')}:${String(dataHora.getMinutes()).padStart(2, '0')}`;
+        totalPorHorario.set(hora, (totalPorHorario.get(hora) || 0) + 1);
+      });
+
+      const capacidade = Math.max(barbeirosDaFilial.length, 1);
+      const indisponiveis = new Set();
+      totalPorHorario.forEach((total, hora) => {
+        if (total >= capacidade) indisponiveis.add(hora);
+      });
+
+      setHorariosIndisponiveis(indisponiveis);
+      if (horarioSelecionado && indisponiveis.has(horarioSelecionado)) {
+        setHorarioSelecionado(null);
+      }
+    };
+
+    carregarHorariosOcupados();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [barbeirosDaFilial.length, dataSelecionada, empresaId, filialSelecionada, horarioSelecionado, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || step !== 3) return;
+    if (barbeirosDaFilial.length === 1) {
+      setBarbeiroSelecionado(barbeirosDaFilial[0]);
+    }
+  }, [barbeirosDaFilial, isOpen, step]);
+
+  if (!isOpen) return null;
+
+  const fechar = () => onClose(confirmado ? { sucesso: true } : null);
+  const prevStep = () => {
+    if (step === 1) fechar();
+    else setStep(s => s - 1);
   };
 
-  const avancarEtapa = (etapaAtual) => {
-    const prox = proximaEtapa(etapaAtual);
-    if (prox) setEtapaAtiva(prox);
+  const verificarConflitoAgendamento = async (dataHora) => {
+    const dataHoraIso = dataHora.toISOString();
+
+    const { data: agendamentoCliente, error: erroCliente } = await supabase
+      .from('agendamentos')
+      .select('id')
+      .eq('empresa_id', empresaId)
+      .eq('cliente_id', clienteId)
+      .eq('data_hora', dataHoraIso)
+      .neq('status', 'cancelado')
+      .limit(1);
+
+    if (erroCliente) throw erroCliente;
+    if (agendamentoCliente?.length) {
+      throw new Error('Voce ja tem um agendamento nesse horario.');
+    }
+
+    let query = supabase
+      .from('agendamentos')
+      .select('id', { count: 'exact' })
+      .eq('empresa_id', empresaId)
+      .eq('filial_id', filialSelecionada.id)
+      .eq('data_hora', dataHoraIso)
+      .neq('status', 'cancelado');
+
+    if (barbeiroSelecionado?.id) {
+      query = query.eq('barbeiro_id', barbeiroSelecionado.id).limit(1);
+    }
+
+    const { data, count, error } = await query;
+    if (error) throw error;
+
+    if (barbeiroSelecionado?.id && data?.length) {
+      throw new Error('Esse barbeiro ja possui agendamento neste horario.');
+    }
+
+    const capacidade = Math.max(barbeirosDaFilial.length, 1);
+    if (!barbeiroSelecionado?.id && Number(count || 0) >= capacidade) {
+      throw new Error('Esse horario nao esta mais disponivel.');
+    }
+  };
+
+  const obterBarbeiroDisponivel = async (dataHora) => {
+    if (barbeiroSelecionado?.id) return barbeiroSelecionado.id;
+
+    const { data: ocupados, error } = await supabase
+      .from('agendamentos')
+      .select('barbeiro_id')
+      .eq('empresa_id', empresaId)
+      .eq('filial_id', filialSelecionada.id)
+      .eq('data_hora', dataHora.toISOString())
+      .neq('status', 'cancelado')
+      .not('barbeiro_id', 'is', null);
+
+    if (error) throw error;
+
+    const barbeirosOcupados = new Set((ocupados || []).map(item => item.barbeiro_id));
+    const barbeiroLivre = barbeirosDaFilial.find(barbeiro => !barbeirosOcupados.has(barbeiro.id));
+
+    if (!barbeiroLivre) {
+      throw new Error('Esse horario nao esta mais disponivel.');
+    }
+
+    return barbeiroLivre.id;
   };
 
   const confirmarAgendamento = async () => {
-    setSalvando(true);
+    if (salvando) return;
     setErro('');
+    setSalvando(true);
     try {
-      let dataHora = null;
-      if (dataSelecionada && horarioSelecionado) {
-        const [h, m] = horarioSelecionado.split(':');
-        const d = new Date(dataSelecionada);
-        d.setHours(parseInt(h), parseInt(m), 0, 0);
-        dataHora = d.toISOString();
+      if (!clienteId || !empresaId) {
+        throw new Error('Sessao invalida. Entre novamente pelo link da barbearia.');
       }
+
+      if (!filialSelecionada || !servicoSelecionado || !dataSelecionada || !horarioSelecionado) {
+        throw new Error('Selecione serviço, data e horário.');
+      }
+
+      const [h, m] = horarioSelecionado.split(':');
+      const dataHora = new Date(dataSelecionada);
+      dataHora.setHours(Number(h), Number(m), 0, 0);
+
+      await verificarConflitoAgendamento(dataHora);
+      const barbeiroId = await obterBarbeiroDisponivel(dataHora);
 
       const { error } = await supabase.from('agendamentos').insert([{
         cliente_id: clienteId,
-        filial_id: filialSelecionada?.id || null,
-        servico_id: servicoSelecionado?.id || null,
-        barbeiro_id: barbeiroSelecionado?.id || null,
-        data_hora: dataHora,
+        empresa_id: empresaId,
+        filial_id: filialSelecionada.id,
+        servico_id: servicoSelecionado.id,
+        barbeiro_id: barbeiroId,
+        data_hora: dataHora.toISOString(),
         tipo_cliente: tipoCliente,
         status: 'agendado',
       }]);
 
       if (error) throw error;
-      onClose({ sucesso: true });
+      setConfirmado(true);
+      setStep(5);
     } catch (e) {
-      setErro('Erro ao confirmar. Tente novamente.');
       console.error(e);
+      if (e.code === '23505' || ['cliente_agendamento_conflito', 'barbeiro_agendamento_conflito'].includes(e.message)) {
+        setErro('Esse horario acabou de ser ocupado. Escolha outro horario.');
+      } else {
+        setErro(e.message || 'Erro ao confirmar. Tente novamente.');
+      }
     } finally {
       setSalvando(false);
     }
   };
 
-  if (!isOpen) return null;
-
-  const formatarData = (d) => {
-    if (!d) return '';
-    return `${DIAS_SEMANA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
+  const etapaTitulo = {
+    1: 'Novo agendamento',
+    2: 'Data e horário',
+    3: 'Escolher barbeiro',
+    4: 'Confirmar agendamento',
   };
 
-  const todasEtapasConcluidas = etapas
-    .filter(e => e !== 'confirmacao')
-    .every(e => etapaConcluida(e));
+  const escolherServicoAvulso = () => {
+    setServicoSelecionado(null);
+    setStep(1);
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-end justify-center">
-      <div className="bg-[#09090b] w-full max-w-sm rounded-t-[32px] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out]" style={{ maxHeight: '92vh' }}>
-
-        {/* Header fixo */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 flex-shrink-0">
-          <div>
-            <h3 className="text-lg font-black text-white">Agendar Serviço</h3>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Escolha as opções abaixo</p>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex justify-center overflow-y-auto">
+      <div className="client-device min-h-screen">
+        {step < 5 && (
+          <div className="back-bar">
+            <button className="back-btn" onClick={prevStep}>
+              <Icon name="arrow" />
+            </button>
+            <span className="back-title">{etapaTitulo[step]}</span>
           </div>
-          <button onClick={() => onClose(null)} className="w-9 h-9 rounded-full bg-[#121212] border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-        </div>
+        )}
 
-        {/* Conteúdo com scroll */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-6 space-y-3">
-          {carregando ? (
-            <div className="py-10 text-center text-zinc-600 text-xs">Carregando...</div>
-          ) : (
-            <>
-              {/* SEÇÃO: FILIAL */}
-              {exibirFilial && (
-                <div data-etapa="filial">
-                  <Secao
-                    titulo="Filial"
-                    ativo={etapaAtiva === 'filial'}
-                    concluido={etapaConcluida('filial')}
-                    onEditar={() => setEtapaAtiva('filial')}
-                  >
-                    {etapaConcluida('filial') && etapaAtiva !== 'filial' ? (
-                      <p className="text-sm font-bold text-[#CEAA6B] px-1 pb-1">{filialSelecionada?.nome}</p>
-                    ) : (
-                      <div className="space-y-2 pt-1">
-                        {filiais.map(f => (
-                          <button key={f.id} onClick={() => { setFilialSelecionada(f); avancarEtapa('filial'); }}
-                            className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${filialSelecionada?.id === f.id ? 'border-[#CEAA6B] bg-[#CEAA6B]/5' : 'border-[#27272a] hover:border-[#CEAA6B]/30'}`}>
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${filialSelecionada?.id === f.id ? 'bg-[#CEAA6B] text-black' : 'bg-zinc-800 text-zinc-500'}`}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
-                            </div>
-                            <div>
-                              <p className="font-bold text-sm text-white">{f.nome}</p>
-                              {f.endereco && <p className="text-[10px] text-zinc-500">{f.endereco}</p>}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </Secao>
+        {carregando ? (
+          <div className="scroll text-center text-zinc-600 text-xs">Carregando...</div>
+        ) : (
+          <>
+            {step === 1 && (
+              <div className="page on">
+                <div className="step-head">
+                  <StepBar step={1} />
+                  <div className="step-title">Qual serviço?</div>
+                  <div className="step-sub">Escolha o que deseja fazer hoje</div>
                 </div>
-              )}
-
-              {/* SEÇÃO: SERVIÇO */}
-              {(!exibirFilial || etapaConcluida('filial')) && (
-                <div data-etapa="servico">
-                  <Secao
-                    titulo="Serviço"
-                    ativo={etapaAtiva === 'servico'}
-                    concluido={etapaConcluida('servico')}
-                    onEditar={() => { setServicoSelecionado(null); setDataSelecionada(null); setHorarioSelecionado(null); setBarbeiroSelecionado(null); setEtapaAtiva('servico'); }}
-                  >
-                    {etapaConcluida('servico') && etapaAtiva !== 'servico' ? (
-                      <div className="flex justify-between items-center px-1 pb-1">
-                        <p className="text-sm font-bold text-[#CEAA6B]">{servicoSelecionado?.nome}</p>
-                        {tipoCliente === 'avulso' && <p className="text-sm font-black text-white">R$ {Number(servicoSelecionado?.preco).toFixed(0)}</p>}
-                      </div>
-                    ) : (
-                      <div className="space-y-2 pt-1">
-                        {servicos.map(s => (
-                          <button key={s.id} onClick={() => { setServicoSelecionado(s); avancarEtapa('servico'); }}
-                            className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${servicoSelecionado?.id === s.id ? 'border-[#CEAA6B] bg-[#CEAA6B]/5' : 'border-[#27272a] hover:border-[#CEAA6B]/30'}`}>
-                            <div className="text-left">
-                              <p className="font-bold text-sm text-white">{s.nome}</p>
-                              <p className="text-[10px] text-zinc-500">{s.duracao_minutos} min</p>
-                            </div>
-                            {tipoCliente === 'avulso' && (
-                              <p className="text-[#CEAA6B] font-black text-base">R$ {Number(s.preco).toFixed(0)}</p>
-                            )}
-                          </button>
-                        ))}
-
-                        {/* Banner de plano para avulso */}
-                        {tipoCliente === 'avulso' && melhorPlano && (
-                          <div className="bg-[#0f0a05] border border-[#CEAA6B]/15 rounded-xl p-3 mt-1">
-                            <p className="text-[10px] text-zinc-500 leading-relaxed">
-                              💡 Com o <span className="text-[#CEAA6B] font-bold">Plano {melhorPlano.nome}</span> por{' '}
-                              <span className="text-[#CEAA6B] font-bold">R$ {Number(melhorPlano.preco).toFixed(0)}/mês</span> você economiza muito mais do que pagando avulso.
-                            </p>
-                            <button onClick={() => onClose({ irParaPlanos: true })} className="mt-1.5 text-[#CEAA6B] text-[9px] font-black uppercase tracking-widest underline underline-offset-2">
-                              Ver planos →
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Secao>
-                </div>
-              )}
-
-              {/* SEÇÃO: DATA E HORA */}
-              {etapaConcluida('servico') && (
-                <div data-etapa="data">
-                  <Secao
-                    titulo="Data e Horário"
-                    ativo={etapaAtiva === 'data'}
-                    concluido={etapaConcluida('data')}
-                    onEditar={() => { setDataSelecionada(null); setHorarioSelecionado(null); setBarbeiroSelecionado(null); setEtapaAtiva('data'); }}
-                  >
-                    {etapaConcluida('data') && etapaAtiva !== 'data' ? (
-                      <p className="text-sm font-bold text-[#CEAA6B] px-1 pb-1">{formatarData(dataSelecionada)} às {horarioSelecionado}</p>
-                    ) : (
-                      <div className="space-y-4 pt-1">
-                        {/* Dias */}
+                <div className="scroll" style={{ paddingTop: '14px' }}>
+                  {servicos.map(svc => {
+                    const nome = svc.nome.toLowerCase();
+                    const icon = nome.includes('barba') ? 'tool' : nome.includes('&') || nome.includes('combo') ? 'stars' : 'scissors';
+                    return (
+                      <button
+                        key={svc.id}
+                        className={`sopt ${servicoSelecionado?.id === svc.id ? 'sel' : ''}`}
+                        onClick={() => setServicoSelecionado(svc)}
+                      >
+                        <div className="sopt-ico"><Icon name={icon} /></div>
                         <div>
-                          <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Dia</p>
-                          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                            {DIAS.map((d, i) => {
-                              const sel = dataSelecionada?.toDateString() === d.toDateString();
-                              return (
-                                <button key={i} onClick={() => { setDataSelecionada(d); setHorarioSelecionado(null); }}
-                                  className={`flex-shrink-0 flex flex-col items-center px-3 py-2 rounded-xl border transition-all min-w-[48px] ${sel ? 'border-[#CEAA6B] bg-[#CEAA6B]/10 text-[#CEAA6B]' : 'border-[#27272a] text-zinc-500 hover:border-[#CEAA6B]/30'}`}>
-                                  <span className="text-[8px] font-bold uppercase">{i === 0 ? 'Hoje' : DIAS_SEMANA[d.getDay()]}</span>
-                                  <span className="text-base font-black leading-tight">{d.getDate()}</span>
-                                  <span className="text-[8px] uppercase">{MESES[d.getMonth()]}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <div className="sopt-name">{svc.nome}</div>
+                          <div className="sopt-sub">~{svc.duracao_minutos || 30} min · R$ {Number(svc.preco || 0).toFixed(0)}</div>
                         </div>
-
-                        {/* Horários */}
-                        {dataSelecionada && (
-                          <div>
-                            <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Horário</p>
-                            <div className="grid grid-cols-4 gap-1.5">
-                              {HORARIOS.map(h => (
-                                <button key={h} onClick={() => { setHorarioSelecionado(h); avancarEtapa('data'); }}
-                                  className={`py-2 rounded-xl border text-xs font-bold transition-all ${horarioSelecionado === h ? 'border-[#CEAA6B] bg-[#CEAA6B]/10 text-[#CEAA6B]' : 'border-[#27272a] text-zinc-500 hover:border-[#CEAA6B]/30'}`}>
-                                  {h}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Secao>
+                        <div className="chk"><Icon name="check" /></div>
+                      </button>
+                    );
+                  })}
+                  <button className="btn primary" onClick={() => setStep(2)} disabled={!servicoSelecionado} style={{ marginTop: '8px' }}>
+                    Próximo
+                  </button>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* SEÇÃO: BARBEIRO */}
-              {exibirBarbeiro && etapaConcluida('data') && (
-                <div data-etapa="barbeiro">
-                  <Secao
-                    titulo="Barbeiro"
-                    ativo={etapaAtiva === 'barbeiro'}
-                    concluido={etapaConcluida('barbeiro')}
-                    onEditar={() => { setBarbeiroSelecionado(null); setEtapaAtiva('barbeiro'); }}
-                  >
-                    {etapaConcluida('barbeiro') && etapaAtiva !== 'barbeiro' ? (
-                      <p className="text-sm font-bold text-[#CEAA6B] px-1 pb-1">{barbeiroSelecionado?.nome}</p>
-                    ) : (
-                      <div className="space-y-2 pt-1">
-                        {(barbeirosFiltrados.length > 0 ? barbeirosFiltrados : barbeiros).map(b => (
-                          <button key={b.id} onClick={() => { setBarbeiroSelecionado(b); avancarEtapa('barbeiro'); }}
-                            className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${barbeiroSelecionado?.id === b.id ? 'border-[#CEAA6B] bg-[#CEAA6B]/5' : 'border-[#27272a] hover:border-[#CEAA6B]/30'}`}>
-                            <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${barbeiroSelecionado?.id === b.id ? 'bg-[#CEAA6B] text-black' : 'bg-zinc-800 text-zinc-400'}`}>
-                              {b.nome.substring(0, 2).toUpperCase()}
-                            </div>
-                            <p className="font-bold text-sm text-white">{b.nome}</p>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </Secao>
+            {step === 2 && (
+              <div className="page on">
+                <div className="step-head">
+                  <StepBar step={2} />
+                  <div className="step-title">Quando?</div>
+                  <div className="step-sub">Escolha data e horário disponível</div>
                 </div>
-              )}
-
-              {/* SEÇÃO: CONFIRMAÇÃO */}
-              {todasEtapasConcluidas && (
-                <div data-etapa="confirmacao">
-                  <div className="bg-[#121212] border border-[#27272a] rounded-[20px] p-4 space-y-3">
-                    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Resumo do agendamento</p>
-
-                    {filialSelecionada && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] text-zinc-500">Filial</span>
-                        <span className="text-sm font-bold text-white">{filialSelecionada.nome}</span>
+                <div className="scroll" style={{ paddingTop: '14px' }}>
+                  {isAssinante && servicoSelecionado && (
+                    <div className="card">
+                      <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mb-2">Servico do plano</p>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-white font-bold text-sm">{servicoSelecionado.nome}</p>
+                          <p className="text-xs text-zinc-500 mt-1">Incluido no {planoCliente?.planoNome || 'plano ativo'}</p>
+                        </div>
+                        <button type="button" className="text-[#d5b451] text-[10px] font-bold uppercase tracking-widest" onClick={escolherServicoAvulso}>
+                          Avulso
+                        </button>
                       </div>
-                    )}
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-zinc-500">Serviço</span>
-                      <span className="text-sm font-bold text-white">{servicoSelecionado?.nome}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-zinc-500">Data e Hora</span>
-                      <span className="text-sm font-bold text-white">{formatarData(dataSelecionada)} às {horarioSelecionado}</span>
-                    </div>
-                    {barbeiroSelecionado && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] text-zinc-500">Barbeiro</span>
-                        <span className="text-sm font-bold text-white">{barbeiroSelecionado.nome}</span>
-                      </div>
-                    )}
-                    {tipoCliente === 'avulso' && (
-                      <div className="flex justify-between items-center pt-2 border-t border-[#27272a]">
-                        <span className="text-[10px] text-zinc-500">Valor</span>
-                        <span className="text-base font-black text-[#CEAA6B]">R$ {Number(servicoSelecionado?.preco).toFixed(0)}</span>
+                  )}
+                  <div className="stat-lbl">DATA</div>
+                  <div className="date-grid">
+                    {datasDisponiveis.length > 0 ? datasDisponiveis.map(d => (
+                      <button
+                        key={d.toISOString()}
+                        className={`dslot ${mesmaData(dataSelecionada, d) ? 'sel' : ''}`}
+                        onClick={() => {
+                          setDataSelecionada(d);
+                          setHorarioSelecionado(null);
+                        }}
+                      >
+                        <div className="dday">{DIAS_SEMANA[d.getDay()]}</div>
+                        <div className="dnum">{String(d.getDate()).padStart(2, '0')}</div>
+                      </button>
+                    )) : (
+                      <div className="notice" style={{ gridColumn: '1 / -1', padding: '12px', color: 'var(--client-s6)', fontSize: '12px' }}>
+                        Nenhum dia aberto nos proximos dias.
                       </div>
                     )}
                   </div>
 
-                  {tipoCliente === 'avulso' && (
-                    <div className="bg-[#0f0a05] border border-[#CEAA6B]/15 rounded-[16px] p-3 mt-3">
-                      <p className="text-[10px] text-zinc-500 text-center leading-relaxed">
-                        💳 Pagamento <span className="text-[#CEAA6B] font-bold">presencialmente na barbearia</span> no dia do atendimento.
-                      </p>
-                    </div>
-                  )}
+                  <div className="stat-lbl">HORÁRIOS DISPONÍVEIS</div>
+                  <div className="time-grid">
+                    {dataSelecionada && horariosDoDia.length > 0 ? horariosDoDia.map(hora => {
+                      const indisponivel = horariosIndisponiveis.has(hora);
+                      return (
+                        <button
+                          key={hora}
+                          className={`tslot ${horarioSelecionado === hora ? 'sel' : ''} ${indisponivel ? 'busy' : ''}`}
+                          disabled={indisponivel}
+                          onClick={() => {
+                            if (!indisponivel) setHorarioSelecionado(hora);
+                          }}
+                        >
+                          {hora}
+                        </button>
+                      );
+                    }) : (
+                      <div className="notice" style={{ gridColumn: '1 / -1', padding: '12px', color: 'var(--client-s6)', fontSize: '12px' }}>
+                        Escolha uma data com horários disponíveis.
+                      </div>
+                    )}
+                  </div>
 
-                  {erro && <p className="text-red-500 text-xs font-medium text-center mt-2">{erro}</p>}
-
-                  <button
-                    onClick={confirmarAgendamento}
-                    disabled={salvando}
-                    className="w-full bg-[#CEAA6B] text-black font-black py-4 rounded-[20px] uppercase tracking-[0.15em] text-[10px] active:scale-95 transition-all disabled:opacity-60 mt-3"
-                  >
-                    {salvando ? 'Confirmando...' : 'Confirmar Agendamento'}
+                  <button className="btn primary" onClick={() => setStep(3)} disabled={!dataSelecionada || !horarioSelecionado}>
+                    Próximo
                   </button>
                 </div>
-              )}
-            </>
-          )}
-        </div>
+              </div>
+            )}
 
-        {/* Botão cancelar fixo no rodapé */}
-        <div className="px-5 pb-6 pt-2 flex-shrink-0">
-          <button onClick={() => onClose(null)} className="w-full text-zinc-600 font-bold py-2 text-[10px] uppercase tracking-widest hover:text-zinc-400 transition-colors">
-            Cancelar
-          </button>
-        </div>
+            {step === 3 && (
+              <div className="page on">
+                <div className="step-head">
+                  <StepBar step={3} />
+                  <div className="step-title">Com quem?</div>
+                  <div className="step-sub">Ou deixe sem preferência</div>
+                </div>
+                <div className="scroll" style={{ paddingTop: '14px' }}>
+                  {barbeirosDaFilial.map(b => (
+                    <button key={b.id} className={`bopt ${barbeiroSelecionado?.id === b.id ? 'sel' : ''}`} onClick={() => setBarbeiroSelecionado(b)}>
+                      <div className="bav">{b.nome.substring(0, 2).toUpperCase()}</div>
+                      <div>
+                        <div className="bname">{b.nome}</div>
+                        <div className="brole">Barbeiro</div>
+                      </div>
+                      <div className="chk"><Icon name="check" /></div>
+                    </button>
+                  ))}
+
+                  {barbeirosDaFilial.length > 1 && (
+                    <button className={`bopt ${!barbeiroSelecionado ? 'sel' : ''}`} onClick={() => setBarbeiroSelecionado(null)}>
+                    <div className="bav"><Icon name="users" /></div>
+                    <div>
+                      <div className="bname">Sem preferência</div>
+                      <div className="brole">Próximo disponível</div>
+                    </div>
+                    <div className="chk"><Icon name="check" /></div>
+                    </button>
+                  )}
+
+                  <button className="btn primary" onClick={() => setStep(4)} style={{ marginTop: '8px' }}>Próximo</button>
+                </div>
+              </div>
+            )}
+
+            {step === 4 && (
+              <div className="page on">
+                <div className="step-head">
+                  <StepBar step={4} />
+                  <div className="step-title">Tudo certo?</div>
+                  <div className="step-sub">Revise antes de confirmar</div>
+                </div>
+                <div className="scroll" style={{ paddingTop: '14px' }}>
+                  <div className="conf">
+                    <div className="crow"><span className="cl">Serviço</span><span className="cv">{servicoSelecionado?.nome || '-'}</span></div>
+                    <div className="crow"><span className="cl">Data</span><span className="cv">{dataSelecionada?.toLocaleDateString('pt-BR') || '-'}</span></div>
+                    <div className="crow"><span className="cl">Horário</span><span className="cv">{horarioSelecionado || '-'}</span></div>
+                    <div className="crow"><span className="cl">Barbeiro</span><span className="cv">{barbeiroSelecionado?.nome || 'Sem preferência'}</span></div>
+                    <div className="crow"><span className="cl">Valor</span><span className="cv" style={{ color: 'var(--client-gold)' }}>R$ {Number(servicoSelecionado?.preco || 0).toFixed(0)}</span></div>
+                  </div>
+                  {erro && <p className="text-red-500 text-xs text-center mb-2">{erro}</p>}
+                  <button className="btn primary" onClick={confirmarAgendamento} disabled={salvando}>
+                    {salvando ? 'Confirmando...' : 'Confirmar agendamento'}
+                  </button>
+                  <button className="btn ghost" style={{ marginTop: '8px' }} onClick={fechar}>Cancelar</button>
+                </div>
+              </div>
+            )}
+
+            {step === 5 && (
+              <div className="page on">
+                <div className="success-wrap">
+                  <div className="success-ring">
+                    <Icon name="check" className="w-8 h-8" />
+                  </div>
+                  <div style={{ color: 'var(--client-gold)', fontSize: '11px', letterSpacing: '2px', marginBottom: '8px' }}>CONFIRMADO</div>
+                  <div style={{ color: 'var(--client-text)', fontSize: '36px', fontWeight: 900, marginBottom: '6px' }}>AGENDADO!</div>
+                  <div style={{ color: 'var(--client-s6)', fontSize: '13px', marginBottom: '28px', lineHeight: 1.7, textAlign: 'center' }}>
+                    Seu horário está reservado.<br />Você receberá um lembrete.
+                  </div>
+                  <button className="btn primary" onClick={fechar}>Voltar ao início</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
+    </div>
+  );
+}
 
-      <style dangerouslySetInnerHTML={{ __html: `@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }` }} />
+function StepBar({ step }) {
+  return (
+    <div className="step-bar">
+      {[1, 2, 3, 4].map((item, index) => (
+        <span key={item} style={{ display: 'contents' }}>
+          <div className={`sdot ${item < step ? 'done' : item === step ? 'cur' : ''}`}></div>
+          {index < 3 && <div className={`sline ${item < step ? 'done' : ''}`}></div>}
+        </span>
+      ))}
     </div>
   );
 }

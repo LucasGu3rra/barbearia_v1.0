@@ -1,25 +1,28 @@
-import React, { useState, useEffect } from 'react';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 
-export default function ModalPlanos({ isOpen, onClose, onRefresh }) {
+export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
   const [planos, setPlanos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
-  useEffect(() => {
-    if (isOpen) buscarPlanos();
-  }, [isOpen]);
-
-  const buscarPlanos = async () => {
+  const buscarPlanos = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('planos')
       .select('*')
+      .eq('empresa_id', empresaId)
+      .is('deleted_at', null)
       .order('preco', { ascending: true });
     
     if (!error) setPlanos(data);
     setLoading(false);
-  };
+  }, [empresaId]);
+
+  useEffect(() => {
+    if (isOpen && empresaId) buscarPlanos();
+  }, [isOpen, empresaId, buscarPlanos]);
 
   const handleInputChange = (id, campo, valor) => {
     setPlanos(planos.map(p => p.id === id ? { ...p, [campo]: valor } : p));
@@ -34,9 +37,12 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh }) {
           .update({
             nome: plano.nome,
             preco: parseFloat(plano.preco),
-            limite: parseInt(plano.limite)
+            limite: plano.ilimitado ? 0 : parseInt(plano.limite),
+            ilimitado: Boolean(plano.ilimitado),
+            ativo: Boolean(plano.ativo)
           })
-          .eq('id', plano.id);
+          .eq('id', plano.id)
+          .eq('empresa_id', empresaId);
         
         if (error) throw error;
       }
@@ -47,6 +53,23 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh }) {
     } finally {
       setSalvando(false);
     }
+  };
+
+  const excluirPlano = async (plano) => {
+    if (!window.confirm(`Excluir o plano "${plano.nome}"? Clientes com esse plano podem ficar sem referência.`)) return;
+    const { error } = await supabase
+      .from('planos')
+      .update({ ativo: false, deleted_at: new Date().toISOString() })
+      .eq('id', plano.id)
+      .eq('empresa_id', empresaId);
+
+    if (error) {
+      alert('Erro ao excluir plano: ' + error.message);
+      return;
+    }
+
+    await buscarPlanos();
+    if (onRefresh) onRefresh();
   };
 
   if (!isOpen) return null;
@@ -76,7 +99,13 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh }) {
               <div key={plano.id} className="space-y-3 p-4 bg-[#09090b] border border-[#27272a] rounded-2xl">
                 <div className="flex justify-between items-center mb-2">
                    <span className="text-[10px] font-black text-zinc-600 uppercase tracking-tighter">ID: {plano.slug}</span>
-                   <div className={`w-2 h-2 rounded-full ${plano.ativo ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                   <button
+                    type="button"
+                    onClick={() => handleInputChange(plano.id, 'ativo', !plano.ativo)}
+                    className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded ${plano.ativo ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}
+                   >
+                    {plano.ativo ? 'Ativo' : 'Inativo'}
+                   </button>
                 </div>
 
                 <div>
@@ -103,12 +132,32 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh }) {
                     <label className="text-[10px] font-bold text-zinc-500 uppercase ml-1">Qtd. Cortes</label>
                     <input 
                       type="number"
-                      value={plano.limite}
+                      value={plano.ilimitado ? '' : plano.limite}
+                      disabled={plano.ilimitado}
                       onChange={(e) => handleInputChange(plano.id, 'limite', e.target.value)}
-                      className="w-full bg-[#121212] border border-[#27272a] rounded-xl px-4 py-2.5 text-white text-sm focus:border-[#CEAA6B]/50 outline-none transition-colors"
+                      className="w-full bg-[#121212] border border-[#27272a] rounded-xl px-4 py-2.5 text-white text-sm focus:border-[#CEAA6B]/50 outline-none transition-colors disabled:opacity-50"
                     />
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleInputChange(plano.id, 'ilimitado', !plano.ilimitado)}
+                  className={`w-full p-3 rounded-xl border flex items-center justify-between text-left transition-colors ${plano.ilimitado ? 'border-[#CEAA6B]/40 bg-[#CEAA6B]/10 text-[#CEAA6B]' : 'border-[#27272a] bg-[#121212] text-zinc-500'}`}
+                >
+                  <span className="text-xs font-bold uppercase tracking-widest">Plano ilimitado</span>
+                  <span className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${plano.ilimitado ? 'bg-[#CEAA6B]' : 'bg-[#27272a]'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${plano.ilimitado ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => excluirPlano(plano)}
+                  className="w-full p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-red-400 text-xs font-bold uppercase tracking-widest"
+                >
+                  Excluir plano
+                </button>
               </div>
             ))
           )}

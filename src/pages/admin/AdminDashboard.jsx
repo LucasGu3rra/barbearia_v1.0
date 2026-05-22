@@ -1,9 +1,10 @@
-import { useState, useEffect, forwardRef } from 'react';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useState, useEffect, forwardRef, useCallback } from 'react';
 import ModalFiliais from '../components/ModalFiliais';
 import ModalBarbeiros from '../components/ModalBarbeiros';
 import ModalServicos from '../components/ModalServicos';
 import ModalConfiguracoes from '../components/ModalConfiguracoes';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import ModalAlerta from "../components/ModalAlerta";
 import ModalPlanos from "../components/ModalPlanos";
@@ -11,8 +12,8 @@ import DrawerAdmin from "./DrawerAdmin";
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { ptBR } from 'date-fns/locale';
+import { useAuth } from '../../contexts/useAuth';
 
-// Botão customizado que disfarça o input para enganar o celular e não abrir o teclado
 const CustomDateInput = forwardRef(({ value, onClick }, ref) => (
   <button
     type="button"
@@ -25,8 +26,13 @@ const CustomDateInput = forwardRef(({ value, onClick }, ref) => (
 ));
 
 export default function AdminDashboard() {
+  const { isAdmin, empresaAtual, loading: authLoading } = useAuth();
+  const { empresaSlug } = useParams();
+  const empresaId = empresaAtual?.id;
+  const [agendamentoAtivo, setAgendamentoAtivo] = useState(false);
   const [clientes, setClientes] = useState([]);
   const [cortesGerais, setCortesGerais] = useState([]); 
+  const [agenda, setAgenda] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [planosInfo, setPlanosInfo] = useState({});
@@ -50,18 +56,19 @@ export default function AdminDashboard() {
 
   const navigate = useNavigate();
  
-
   const fecharModal = () => setModalConfig({ ...modalConfig, isOpen: false });
   const showConfirm = (title, message, acao) => setModalConfig({ isOpen: true, type: 'confirm', title, message, onConfirm: acao });
   const showAlert = (title, message) => setModalConfig({ isOpen: true, type: 'alert', title, message, onConfirm: null });
 
-  const carregarDados = async (isManualRefresh = false) => {
+  const carregarDados = useCallback(async (isManualRefresh = false) => {
+    if (!empresaId) return;
     if (isManualRefresh) setRefreshing(true);
     
     try {
       const { data: dadosPlanos, error: errPlanos } = await supabase
         .from('planos')
-        .select('*');
+        .select('*')
+        .eq('empresa_id', empresaId);
       
       if (errPlanos) throw errPlanos;
 
@@ -69,11 +76,23 @@ export default function AdminDashboard() {
       dadosPlanos?.forEach(p => {
         mapaPlanos[p.slug] = { 
           nome: p.nome, 
-          limite: p.limite, 
+          limite: p.limite,
+          ilimitado: Boolean(p.ilimitado),
           preco: `R$ ${Number(p.preco).toFixed(2).replace('.', ',')}/mês` 
         };
       });
       setPlanosInfo(mapaPlanos);
+
+      const { data: config } = await supabase
+        .from('configuracoes')
+        .select('valor')
+        .eq('empresa_id', empresaId)
+        .eq('chave', 'fluxo_agendamento')
+        .maybeSingle();
+
+      if (config?.valor) {
+        setAgendamentoAtivo(config.valor.agendamento_ativo ?? false);
+      }
 
       const { data: dadosClientes, error: errClientes } = await supabase
         .from('clientes')
@@ -81,6 +100,7 @@ export default function AdminDashboard() {
           id, nome, whatsapp,
           assinaturas ( id, plano_escolhido, status, data_vencimento, created_at )
         `)
+        .eq('empresa_id', empresaId)
         .eq('eh_admin', false) 
         .order('nome');
 
@@ -92,12 +112,27 @@ export default function AdminDashboard() {
           id, created_at, tipo_corte, cliente_id,
           clientes ( nome, whatsapp )
         `)
+        .eq('empresa_id', empresaId)
         .order('created_at', { ascending: false });
 
       if (errCortes) throw errCortes;
 
+      const { data: dadosAgendamentos, error: errAgendamentos } = await supabase
+        .from('agendamentos')
+        .select(`
+          id, data_hora, status, tipo_cliente, created_at,
+          clientes ( nome, whatsapp ),
+          servicos ( nome, preco, duracao_minutos ),
+          barbeiros ( nome )
+        `)
+        .eq('empresa_id', empresaId)
+        .order('data_hora', { ascending: true });
+
+      if (errAgendamentos) throw errAgendamentos;
+
       setClientes(dadosClientes || []);
       setCortesGerais(dadosCortes || []);
+      setAgenda(dadosAgendamentos || []);
 
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
@@ -107,74 +142,52 @@ export default function AdminDashboard() {
         setTimeout(() => setRefreshing(false), 600);
       }
     }
-  };
+  }, [empresaId]);
 
-useEffect(() => { 
+  useEffect(() => { 
+    if (authLoading) return;
+
     let isMounted = true;
 
-    // 1. A FUNÇÃO DO "SEGURANÇA DA PORTA"
     const checarAdminReal = async () => {
-      // Pega a sessão atual direto do servidor do Supabase
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) return navigate('/');
-
-      // Vai no banco de dados e checa a verdade absoluta
-      const { data } = await supabase
-        .from('clientes')
-        .select('eh_admin')
-        .eq('id', user.id)
-        .single();
-
-      // Se o cara fraudou o LocalStorage, a gente corrige e chuta ele pra fora
-      if (!data?.eh_admin) {
-        localStorage.setItem('isAdmin', 'false');
-        return navigate('/dashboard');
+      if (!isAdmin || !empresaId || !empresaSlug || empresaAtual?.slug !== empresaSlug) {
+        return navigate('/');
       }
 
-      // Se for admin de verdade, CARREGA OS DADOS!
-      if (isMounted) {
-        carregarDados();
-      }
+      if (isMounted) carregarDados();
     };
 
-    // 2. EXECUTA A CHECAGEM IMEDIATAMENTE
     checarAdminReal(); 
 
-    // 3. MANTÉM OS SEUS OLHEIROS (Tempo Real) FUNCIONANDO
     const channel = supabase
       .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'clientes' },
-        () => carregarDados()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'assinaturas' },
-        () => carregarDados()
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clientes' }, () => carregarDados())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'assinaturas' }, () => carregarDados())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agendamentos' }, () => carregarDados())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'configuracoes' }, () => carregarDados())
       .subscribe();
 
-    // 4. LIMPA TUDO SE SAIR DA TELA
     return () => {
       isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, [navigate]);
+  }, [navigate, authLoading, isAdmin, empresaId, empresaSlug, empresaAtual?.slug, carregarDados]);
+
+  useEffect(() => {
+    if (!agendamentoAtivo && abaAtiva === 'agenda') {
+      setAbaAtiva('todos');
+    }
+  }, [agendamentoAtivo, abaAtiva]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem('clienteId');
+    localStorage.clear();
+    sessionStorage.clear();
     navigate('/');
   };
 
   const confirmarAtivacao = (assinaturaId, nomeCliente) => {
-    showConfirm(
-      'Ativar Assinatura', 
-      `Confirmar recebimento e ativar o plano de ${nomeCliente} por 30 dias?`, 
-      () => efetuarAtivacao(assinaturaId)
-    );
+    showConfirm('Ativar Assinatura', `Confirmar recebimento e ativar o plano de ${nomeCliente} por 30 dias?`, () => efetuarAtivacao(assinaturaId));
   };
 
   const efetuarAtivacao = async (assinaturaId) => {
@@ -182,12 +195,11 @@ useEffect(() => {
     try {
       const dataVencimento = new Date();
       dataVencimento.setDate(dataVencimento.getDate() + 30);
-
       const { error } = await supabase
         .from('assinaturas')
         .update({ status: 'ativa', data_vencimento: dataVencimento.toISOString() })
-        .eq('id', assinaturaId);
-
+        .eq('id', assinaturaId)
+        .eq('empresa_id', empresaId);
       if (error) throw error;
       carregarDados(); 
       showAlert('Sucesso', 'A assinatura foi ativada e o acesso do cliente está liberado.');
@@ -197,11 +209,7 @@ useEffect(() => {
   };
 
   const confirmarExclusaoAssinatura = (assinaturaId, nomeCliente) => {
-    showConfirm(
-      'Excluir Assinatura',
-      `Tem certeza que deseja remover a assinatura de ${nomeCliente}? O cliente voltará para a tela de escolha de planos.`,
-      () => efetuarExclusaoAssinatura(assinaturaId)
-    );
+    showConfirm('Excluir Assinatura', `Tem certeza que deseja remover a assinatura de ${nomeCliente}? O cliente voltará para a tela de escolha de planos.`, () => efetuarExclusaoAssinatura(assinaturaId));
   };
 
   const efetuarExclusaoAssinatura = async (assinaturaId) => {
@@ -210,12 +218,13 @@ useEffect(() => {
       const { error } = await supabase
         .from('assinaturas')
         .delete()
-        .eq('id', assinaturaId);
-
+        .eq('id', assinaturaId)
+        .eq('empresa_id', empresaId);
       if (error) throw error;
       carregarDados();
       showAlert('Removida', 'A assinatura foi excluída com sucesso.');
     } catch (error) {
+      console.error(error);
       showAlert('Erro', 'Não foi possível excluir a assinatura.');
     }
   };
@@ -239,16 +248,14 @@ useEffect(() => {
     const todasAssinaturas = cliente.assinaturas || [];
     const assinatura = todasAssinaturas.find(a => a.status === 'ativa') || 
                        todasAssinaturas.find(a => a.status === 'pendente') || 
-                       [...todasAssinaturas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || 
-                       null;
+                       [...todasAssinaturas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || null;
 
     const planoDetalhe = assinatura ? planosInfo[assinatura.plano_escolhido] : null;
 
     const cortesNoMes = cortesGerais.filter(corte => {
       const ehDesteCliente = corte.cliente_id === cliente.id; 
       const dataCorte = new Date(corte.created_at);
-      const ehNesteMes = dataCorte.getMonth() === mesAtual && dataCorte.getFullYear() === anoAtual;
-      return ehDesteCliente && ehNesteMes;
+      return ehDesteCliente && dataCorte.getMonth() === mesAtual && dataCorte.getFullYear() === anoAtual;
     }).length;
 
     return { ...cliente, assinatura, planoDetalhe, cortesNoMes };
@@ -258,18 +265,13 @@ useEffect(() => {
   clientes.forEach(cliente => {
     const pendentes = (cliente.assinaturas || []).filter(a => a.status === 'pendente');
     pendentes.forEach(assinaturaPendente => {
-      aguardandoAtivacao.push({
-        ...cliente,
-        assinatura: assinaturaPendente
-      });
+      aguardandoAtivacao.push({ ...cliente, assinatura: assinaturaPendente });
     });
   });
 
-  // LÓGICA DE CÁLCULO DE RENDA
   const calcularRenda = () => {
     let faturamentoMensal = 0;
     let previsaoProximoMes = 0;
-    
     clientesProcessados.forEach(cliente => {
       if (cliente.assinatura?.status === 'ativa' && cliente.planoDetalhe) {
         const valor = parseFloat(cliente.planoDetalhe.preco.replace('R$ ', '').replace('.', '').replace(',', '.'));
@@ -277,18 +279,15 @@ useEffect(() => {
         previsaoProximoMes += valor;
       }
     });
-
     return { faturamentoMensal, previsaoProximoMes };
   };
 
   const { faturamentoMensal, previsaoProximoMes } = calcularRenda();
   
-let listaClientesFiltrada = clientesProcessados.filter(c => {
-    // Converte para string e garante que não vai quebrar se for null
+  let listaClientesFiltrada = clientesProcessados.filter(c => {
     const nomeSeguro = c.nome ? String(c.nome).toLowerCase() : '';
     const whatsappSeguro = c.whatsapp ? String(c.whatsapp) : '';
     const buscaSegura = busca ? String(busca).toLowerCase() : '';
-    
     return nomeSeguro.includes(buscaSegura) || whatsappSeguro.includes(buscaSegura);
   });
 
@@ -297,20 +296,23 @@ let listaClientesFiltrada = clientesProcessados.filter(c => {
   } else if (abaAtiva === 'inativos') {
     listaClientesFiltrada = listaClientesFiltrada.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa');
   } else if (abaAtiva === 'pendentes') {
-    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.assinatura?.status === 'pendente');
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => (c.assinaturas || []).some(a => a.status === 'pendente'));
   }
 
   const listaCortesFiltrada = cortesGerais.filter(corte => {
     if (!dataFiltro) return true; 
     const d = new Date(corte.created_at);
-    return d.getDate() === dataFiltro.getDate() && 
-           d.getMonth() === dataFiltro.getMonth() && 
-           d.getFullYear() === dataFiltro.getFullYear();
+    return d.getDate() === dataFiltro.getDate() && d.getMonth() === dataFiltro.getMonth() && d.getFullYear() === dataFiltro.getFullYear();
   });
 
-const getIniciais = (nome) => {
+  const listaAgendaFiltrada = agenda.filter(ag => {
+    if (!dataFiltro || !ag.data_hora) return false;
+    const d = new Date(ag.data_hora);
+    return d.getDate() === dataFiltro.getDate() && d.getMonth() === dataFiltro.getMonth() && d.getFullYear() === dataFiltro.getFullYear();
+  });
+
+  const getIniciais = (nome) => {
     if (!nome) return '??';
-    // Garante que é string antes de tentar usar o .split()
     const partes = String(nome).split(' ');
     if (partes.length >= 2) return (partes[0][0] + partes[1][0]).toUpperCase();
     return partes[0].substring(0, 2).toUpperCase();
@@ -325,37 +327,25 @@ const getIniciais = (nome) => {
         isOpen={drawerOpen} 
         onClose={() => setDrawerOpen(false)} 
         onLogout={handleLogout}
-        dadosFinanceiros={{ 
-          faturamentoMensal, 
-          previsaoProximoMes, 
-          totalAtivos: clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length 
-        }}
+        dadosFinanceiros={{ faturamentoMensal, previsaoProximoMes, totalAtivos: clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length }}
+        onOpenPlanos={() => setModalPlanosAberto(true)}
         onOpenFiliais={() => setModalFiliaisAberto(true)}
         onOpenBarbeiros={() => setModalBarbeirosAberto(true)}
         onOpenServicos={() => setModalServicosAberto(true)}
         onOpenConfiguracoes={() => setModalConfiguracoesAberto(true)}
+        onOpenHistorico={() => setAbaAtiva('historico')}
       />
-      <ModalPlanos 
-        isOpen={modalPlanosAberto} 
-        onClose={() => setModalPlanosAberto(false)} 
-        onRefresh={carregarDados}
-      />
-      <ModalFiliais
-        isOpen={modalFiliaisAberto}
-        onClose={() => setModalFiliaisAberto(false)}
-      />
-      <ModalBarbeiros
-        isOpen={modalBarbeirosAberto}
-        onClose={() => setModalBarbeirosAberto(false)}
-      />
-      <ModalServicos
-        isOpen={modalServicosAberto}
-        onClose={() => setModalServicosAberto(false)}
-        onRefresh={carregarDados}
-      />
-      <ModalConfiguracoes
-        isOpen={modalConfiguracoesAberto}
-        onClose={() => setModalConfiguracoesAberto(false)}
+      <ModalPlanos isOpen={modalPlanosAberto} onClose={() => setModalPlanosAberto(false)} onRefresh={carregarDados} empresaId={empresaId} />
+      <ModalFiliais isOpen={modalFiliaisAberto} onClose={() => setModalFiliaisAberto(false)} empresaId={empresaId} />
+      <ModalBarbeiros isOpen={modalBarbeirosAberto} onClose={() => setModalBarbeirosAberto(false)} empresaId={empresaId} />
+      <ModalServicos isOpen={modalServicosAberto} onClose={() => setModalServicosAberto(false)} onRefresh={carregarDados} empresaId={empresaId} />
+      
+      <ModalConfiguracoes 
+        isOpen={modalConfiguracoesAberto} 
+        onClose={() => setModalConfiguracoesAberto(false)} 
+        onRefresh={carregarDados} 
+        onConfigChange={(status) => setAgendamentoAtivo(status)} 
+        empresaId={empresaId}
       />
 
       <ModalAlerta 
@@ -375,13 +365,7 @@ const getIniciais = (nome) => {
             disabled={refreshing}
             className="w-10 h-10 rounded-full border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-[#CEAA6B] transition-colors active:scale-95 disabled:opacity-50"
           >
-            <svg 
-              className={`${refreshing ? 'animate-spin text-[#CEAA6B]' : ''}`}
-              width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            >
-              <path d="M21 2v6h-6"></path>
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-            </svg>
+            <svg className={`${refreshing ? 'animate-spin text-[#CEAA6B]' : ''}`} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path></svg>
           </button>
           
           <button onClick={() => setDrawerOpen(true)} className="w-10 h-10 rounded-full border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors active:scale-95">
@@ -390,19 +374,14 @@ const getIniciais = (nome) => {
         </div>
       </header>
 
-      {abaAtiva !== 'historico' && aguardandoAtivacao.length > 0 && (
+      {abaAtiva !== 'historico' && abaAtiva !== 'agenda' && aguardandoAtivacao.length > 0 && (
         <section className="mb-8">
           <button 
             onClick={() => setMostrarAguardando(!mostrarAguardando)}
             className="w-full flex items-center justify-between text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-4 outline-none active:scale-[0.98] transition-transform"
           >
             <span>Aguardando Ativação ({aguardandoAtivacao.length})</span>
-            <svg 
-              className={`transition-transform duration-300 ${mostrarAguardando ? 'rotate-180' : ''}`} 
-              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            >
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
+            <svg className={`transition-transform duration-300 ${mostrarAguardando ? 'rotate-180' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
           
           {mostrarAguardando && (
@@ -410,11 +389,11 @@ const getIniciais = (nome) => {
               {aguardandoAtivacao.map((item, index) => (
                 <div key={`${item.id}-${index}`} className="bg-[#121212] border border-[#27272a] rounded-[20px] p-5 flex justify-between items-center">
                   <div>
-                    <h3 className="font-bold text-lg leading-tight">{item.nome}</h3>
+                    <h3 className="font-bold text-lg leading-tight"><span>{item.nome}</span></h3>
                     <p className="text-[#CEAA6B] text-[10px] font-bold uppercase mt-1">
-                      {planosInfo[item.assinatura.plano_escolhido]?.nome || 'Plano Antigo'} • Solicitado às {formatarHora(item.assinatura.created_at)}
+                      <span>{planosInfo[item.assinatura.plano_escolhido]?.nome || 'Plano Antigo'} • SOLICITADO EM {formatarData(item.assinatura.created_at)} ÀS {formatarHora(item.assinatura.created_at)}</span>
                     </p>
-                    <p className="text-zinc-500 text-[10px] mt-1">WhatsApp: {item.whatsapp}</p>
+                    <p className="text-zinc-500 text-[10px] mt-1"><span>WhatsApp: {item.whatsapp}</span></p>
                   </div>
                   <button 
                     onClick={() => confirmarAtivacao(item.assinatura.id, item.nome)}
@@ -429,25 +408,125 @@ const getIniciais = (nome) => {
         </section>
       )}
 
+      {/* BLOCO DE BOTÕES - COM A VACINA DO <span> PARA EVITAR CRASH DO GOOGLE TRADUTOR */}
       <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide mb-2">
+        <button 
+          onClick={() => setAbaAtiva('agenda')} 
+          className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${!agendamentoAtivo ? 'hidden' : ''} ${abaAtiva === 'agenda' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}
+        >
+          <span>Agenda do Dia</span>
+        </button>
         <button onClick={() => setAbaAtiva('todos')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'todos' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
-          Todos ({clientesProcessados.length})
+          <span>Todos ({clientesProcessados.length})</span>
         </button>
         <button onClick={() => setAbaAtiva('ativos')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'ativos' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
-          Ativos ({clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length})
+          <span>Ativos ({clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length})</span>
         </button>
         <button onClick={() => setAbaAtiva('pendentes')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'pendentes' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
-          Pendentes ({clientesProcessados.filter(c => c.assinatura?.status === 'pendente').length})
+          <span>Pendentes ({clientesProcessados.filter(c => (c.assinaturas || []).some(a => a.status === 'pendente')).length})</span>
         </button>
         <button onClick={() => setAbaAtiva('inativos')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'inativos' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
-          Inativos ({clientesProcessados.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa').length})
-        </button>
-        <button onClick={() => setAbaAtiva('historico')} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${abaAtiva === 'historico' ? 'bg-[#CEAA6B] text-black' : 'bg-[#121212] text-zinc-500 border border-[#27272a]'}`}>
-          Histórico de Cortes
+          <span>Inativos ({clientesProcessados.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa').length})</span>
         </button>
       </div>
 
-      {abaAtiva !== 'historico' ? (
+      {abaAtiva === 'agenda' || abaAtiva === 'historico' ? (
+
+        <div className="animate-[fadeIn_0.2s_ease-out]">
+          <div className="flex justify-between items-center mb-6 bg-[#121212] p-4 rounded-2xl border border-[#27272a]">
+            <div>
+              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Filtrar por data</p>
+              <h2 className="text-[#CEAA6B] font-bold text-lg">
+                <span>
+                  {dataFiltro && dataFiltro.toDateString() === new Date().toDateString() 
+                    ? (abaAtiva === 'agenda' ? 'Agenda de Hoje' : 'Cortes de Hoje') 
+                    : formatarData(dataFiltro)}
+                </span>
+              </h2>
+            </div>
+            
+            <div className="relative w-full ml-4 max-w-[150px]">
+              <DatePicker 
+                selected={dataFiltro}
+                onChange={(date) => setDataFiltro(date)}
+                locale={ptBR}
+                dateFormat="dd/MM/yyyy"
+                withPortal
+                customInput={<CustomDateInput />}
+                wrapperClassName="w-full"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {abaAtiva === 'agenda' ? (
+              listaAgendaFiltrada.length > 0 ? (
+                listaAgendaFiltrada.map(ag => {
+                  const horaAgendamento = formatarHora(ag.data_hora);
+                  const nomeCli = ag.clientes?.nome || 'Cliente Desconhecido';
+                  const nomeServico = ag.servicos?.nome || 'Serviço não informado';
+                  const nomeBarbeiro = ag.barbeiros?.nome || 'Sem barbeiro';
+                  
+                  return (
+                    <div key={ag.id} className="bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full border border-[#27272a] bg-[#09090b] flex items-center justify-center text-zinc-500 font-bold text-xs">
+                          {getIniciais(nomeCli)}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-white"><span>{nomeCli}</span></h4>
+                          <p className="text-[10px] text-[#CEAA6B] font-medium uppercase tracking-wider"><span>{nomeServico} • {nomeBarbeiro}</span></p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-white"><span>{horaAgendamento}</span></p>
+                        <span className={`inline-block mt-1 text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${ag.status === 'concluido' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-[#CEAA6B]/10 text-[#CEAA6B]'}`}>
+                          {ag.status || 'Agendado'}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="bg-[#121212] border border-[#27272a] border-dashed rounded-[20px] p-10 flex flex-col items-center justify-center text-center">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-600 mb-3"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                  <p className="text-zinc-500 text-sm font-medium"><span>Nenhum agendamento para este dia.</span></p>
+                </div>
+              )
+            ) : (
+              listaCortesFiltrada.length > 0 ? (
+                listaCortesFiltrada.map(corte => {
+                  const horaCorte = formatarHora(corte.created_at);
+                  const nomeCli = corte.clientes?.nome || 'Cliente Desconhecido';
+                  
+                  return (
+                    <div key={corte.id} className="bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full border border-[#27272a] bg-[#09090b] flex items-center justify-center text-zinc-500 font-bold text-xs">
+                          {getIniciais(nomeCli)}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-white"><span>{nomeCli}</span></h4>
+                          <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider"><span>{corte.tipo_corte}</span></p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-zinc-400"><span>{horaCorte}</span></p>
+                        <p className="text-[10px] text-zinc-600"><span>Registrado</span></p>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="bg-[#121212] border border-[#27272a] border-dashed rounded-[20px] p-10 flex flex-col items-center justify-center text-center">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-600 mb-3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                  <p className="text-zinc-500 text-sm font-medium"><span>Nenhum corte manual registrado neste dia.</span></p>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      ) : (
         <>
           <div className="relative mb-6">
             <svg className="absolute left-4 top-4 text-zinc-500" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -473,7 +552,7 @@ const getIniciais = (nome) => {
                     </div>
                     <div className="flex-1">
                       <div className="flex justify-between items-start">
-                        <h3 className="font-bold text-lg leading-none">{cliente.nome}</h3>
+                        <h3 className="font-bold text-lg leading-none"><span>{cliente.nome}</span></h3>
                         <div className="flex gap-2">
                           {cliente.assinatura && (
                             <button 
@@ -493,7 +572,7 @@ const getIniciais = (nome) => {
                         </div>
                       </div>
                       <p className="text-zinc-500 text-xs mt-1.5">
-                        {cliente.planoDetalhe ? `${cliente.planoDetalhe.limite} Cortes/mês • ${cliente.planoDetalhe.preco}` : 'Nenhum plano escolhido'}
+                        <span>{cliente.planoDetalhe ? `${cliente.planoDetalhe.ilimitado ? 'Ilimitado' : `${cliente.planoDetalhe.limite} Cortes/mês`} • ${cliente.planoDetalhe.preco}` : 'Nenhum plano escolhido'}</span>
                       </p>
                     </div>
                   </div>
@@ -501,76 +580,18 @@ const getIniciais = (nome) => {
                   <div className="flex justify-between items-center text-xs">
                     <div className="flex items-center gap-1.5 text-zinc-400">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                      <span className="font-medium">{cliente.cortesNoMes} de {cliente.planoDetalhe?.limite || 0} cortes no mês</span>
+                      <span className="font-medium"><span>{cliente.planoDetalhe?.ilimitado ? `${cliente.cortesNoMes} cortes no mês` : `${cliente.cortesNoMes} de ${cliente.planoDetalhe?.limite || 0} cortes no mês`}</span></span>
                     </div>
                     <span className="text-zinc-500 font-medium">
-                      {statusPendente ? 'Aguardando Ativação' : `Vence ${formatarData(cliente.assinatura?.data_vencimento)}`}
+                      <span>{statusPendente ? 'Aguardando Ativação' : `Vence ${formatarData(cliente.assinatura?.data_vencimento)}`}</span>
                     </span>
                   </div>
                 </div>
               );
             })}
-            {listaClientesFiltrada.length === 0 && <p className="text-center text-zinc-600 text-sm py-10">Nenhum cliente encontrado.</p>}
+            {listaClientesFiltrada.length === 0 && <p className="text-center text-zinc-600 text-sm py-10"><span>Nenhum cliente encontrado.</span></p>}
           </div>
         </>
-
-      ) : (
-
-        <div className="animate-[fadeIn_0.2s_ease-out]">
-          
-          <div className="flex justify-between items-center mb-6 bg-[#121212] p-4 rounded-2xl border border-[#27272a]">
-            <div>
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Filtrar por data</p>
-              <h2 className="text-[#CEAA6B] font-bold text-lg">
-                {dataFiltro && dataFiltro.toDateString() === new Date().toDateString() ? 'Cortes de Hoje' : formatarData(dataFiltro)}
-              </h2>
-            </div>
-            
-            <div className="relative w-full ml-4 max-w-[150px]">
-              <DatePicker 
-                selected={dataFiltro}
-                onChange={(date) => setDataFiltro(date)}
-                locale={ptBR}
-                dateFormat="dd/MM/yyyy"
-                withPortal
-                customInput={<CustomDateInput />}
-                wrapperClassName="w-full"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {listaCortesFiltrada.length > 0 ? (
-              listaCortesFiltrada.map(corte => {
-                const horaCorte = formatarHora(corte.created_at);
-                const nomeCli = corte.clientes?.nome || 'Cliente Desconhecido';
-                
-                return (
-                  <div key={corte.id} className="bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full border border-[#27272a] bg-[#09090b] flex items-center justify-center text-zinc-500 font-bold text-xs">
-                        {getIniciais(nomeCli)}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-white">{nomeCli}</h4>
-                        <p className="text-[10px] text-[#CEAA6B] font-medium uppercase tracking-wider">{corte.tipo_corte}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-zinc-400">{horaCorte}</p>
-                      <p className="text-[10px] text-zinc-600">Registrado</p>
-                    </div>
-                  </div>
-                )
-              })
-            ) : (
-              <div className="bg-[#121212] border border-[#27272a] border-dashed rounded-[20px] p-10 flex flex-col items-center justify-center text-center">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-600 mb-3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                <p className="text-zinc-500 text-sm font-medium">Nenhum corte registrado<br/>neste dia.</p>
-              </div>
-            )}
-          </div>
-        </div>
       )}
     </div>
   );

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 
-export default function ModalBarbeiros({ isOpen, onClose }) {
+export default function ModalBarbeiros({ isOpen, onClose, empresaId }) {
   const [barbeiros, setBarbeiros] = useState([]);
   const [filiais, setFiliais] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10,20 +11,20 @@ export default function ModalBarbeiros({ isOpen, onClose }) {
   const [adicionando, setAdicionando] = useState(false);
   const [erro, setErro] = useState('');
 
-  useEffect(() => {
-    if (isOpen) carregarDados();
-  }, [isOpen]);
-
-  const carregarDados = async () => {
+  const carregarDados = useCallback(async () => {
     setLoading(true);
     const [{ data: dadosBarbeiros }, { data: dadosFiliais }] = await Promise.all([
-      supabase.from('barbeiros').select('*, filiais(nome)').order('created_at', { ascending: true }),
-      supabase.from('filiais').select('id, nome').eq('ativa', true).order('nome'),
+      supabase.from('barbeiros').select('*, filiais(nome)').eq('empresa_id', empresaId).order('created_at', { ascending: true }),
+      supabase.from('filiais').select('id, nome').eq('empresa_id', empresaId).eq('ativa', true).order('nome'),
     ]);
     setBarbeiros(dadosBarbeiros || []);
     setFiliais(dadosFiliais || []);
     setLoading(false);
-  };
+  }, [empresaId]);
+
+  useEffect(() => {
+    if (isOpen && empresaId) carregarDados();
+  }, [isOpen, empresaId, carregarDados]);
 
   const salvarNovoBarbeiro = async () => {
     if (!novoBarbeiro.nome.trim()) {
@@ -38,7 +39,7 @@ export default function ModalBarbeiros({ isOpen, onClose }) {
     setErro('');
     const { error } = await supabase
       .from('barbeiros')
-      .insert([{ nome: novoBarbeiro.nome.trim(), filial_id: novoBarbeiro.filial_id }]);
+      .insert([{ nome: novoBarbeiro.nome.trim(), filial_id: novoBarbeiro.filial_id, empresa_id: empresaId }]);
 
     if (error) {
       setErro('Erro ao salvar. Tente novamente.');
@@ -54,7 +55,8 @@ export default function ModalBarbeiros({ isOpen, onClose }) {
     const { error } = await supabase
       .from('barbeiros')
       .update({ ativo: !barbeiro.ativo })
-      .eq('id', barbeiro.id);
+      .eq('id', barbeiro.id)
+      .eq('empresa_id', empresaId);
 
     if (!error) carregarDados();
   };
@@ -180,8 +182,4 @@ export default function ModalBarbeiros({ isOpen, onClose }) {
       </div>
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324
