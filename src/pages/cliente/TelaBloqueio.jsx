@@ -1,23 +1,28 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { useAuth } from '../../contexts/useAuth';
+import { montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
 
 export default function TelaBloqueio() {
   const navigate = useNavigate();
+  const { empresaSlug } = useParams();
+  const { user, empresaAtual, loading: authLoading } = useAuth();
+  const empresaId = empresaAtual?.id;
+  const slugEmpresa = empresaAtual?.slug || empresaSlug;
+  const whatsappEmpresa = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '5581988468182');
   const [dados, setDados] = useState({ nome: '', iniciais: '', vencimento: '' });
 
-  useEffect(() => {
-    carregarDados();
-  }, []);
-
-  async function carregarDados() {
-    const id = localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
+  const carregarDados = useCallback(async () => {
+    const id = user?.id || localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
     if (!id) return;
 
     // Busca o nome do cliente e a data de vencimento real da assinatura no Supabase
     const { data: cli } = await supabase
       .from('clientes')
       .select('nome, assinaturas(data_vencimento)')
+      .eq('empresa_id', empresaId)
       .eq('id', id)
       .single();
 
@@ -32,7 +37,17 @@ export default function TelaBloqueio() {
         ? new Date(vencimentoRaw).toLocaleDateString('pt-BR') 
         : '01/05/2026'
     });
-  }
+  }, [empresaId, user?.id]);
+
+  useEffect(() => {
+    if (authLoading || !empresaId) return;
+    if (!empresaSlug || empresaAtual?.slug !== empresaSlug) {
+      navigate('/');
+      return;
+    }
+
+    carregarDados();
+  }, [authLoading, empresaId, empresaSlug, empresaAtual?.slug, navigate, carregarDados]);
 
   return (
     <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center pt-10 pb-8 px-5 font-sans">
@@ -91,7 +106,7 @@ export default function TelaBloqueio() {
 
         {/* BOTÃO PARA O WHATSAPP DO JOÃO */}
         <a 
-          href="https://wa.me/55" 
+          href={`https://wa.me/${whatsappEmpresa}`} 
           target="_blank"
           rel="noreferrer"
           className="w-full bg-[#f83b3b] hover:bg-[#d43131] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/20"
@@ -105,7 +120,7 @@ export default function TelaBloqueio() {
       </div>
 
       <button 
-        onClick={() => navigate('/dashboard')}
+        onClick={() => navigate(montarRotaEmpresa(slugEmpresa, '/dashboard'))}
         className="mt-10 text-zinc-600 text-sm font-medium hover:text-zinc-400 transition-colors"
       >
         Voltar ao início

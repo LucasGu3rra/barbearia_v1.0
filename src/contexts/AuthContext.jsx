@@ -1,12 +1,56 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../services/supabase';
-
-const AuthContext = createContext({});
+import { getEmpresaPorSlug } from '../services/empresa';
+import { AuthContext } from './AuthContextObject';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [empresaAtual, setEmpresaAtual] = useState(null);
+  const [papelEmpresa, setPapelEmpresa] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const selecionarEmpresaPorSlug = useCallback(async (slug) => {
+    if (!slug) {
+      setEmpresaAtual(null);
+      setPapelEmpresa(null);
+      setIsAdmin(false);
+      return { empresa: null, papel: null, isAdmin: false };
+    }
+
+    const empresa = await getEmpresaPorSlug(slug);
+    if (!empresa) {
+      setEmpresaAtual(null);
+      setPapelEmpresa(null);
+      setIsAdmin(false);
+      return { empresa: null, papel: null, isAdmin: false };
+    }
+
+    if (!user?.id) {
+      setEmpresaAtual(empresa);
+      setPapelEmpresa(null);
+      setIsAdmin(false);
+      return { empresa, papel: null, isAdmin: false };
+    }
+
+    const { data: vinculo, error } = await supabase
+      .from('usuarios_empresas')
+      .select('papel')
+      .eq('user_id', user.id)
+      .eq('empresa_id', empresa.id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const papel = vinculo?.papel || null;
+    const admin = ['dono', 'admin'].includes(papel);
+
+    setEmpresaAtual(empresa);
+    setPapelEmpresa(papel);
+    setIsAdmin(admin);
+
+    return { empresa, papel, isAdmin: admin };
+  }, [user]);
 
   useEffect(() => {
     let isMounted = true;
@@ -16,50 +60,44 @@ export const AuthProvider = ({ children }) => {
         if (isMounted) {
           setUser(null);
           setIsAdmin(false);
+          setEmpresaAtual(null);
+          setPapelEmpresa(null);
           setLoading(false);
         }
         return;
       }
 
       try {
-        // 1. Salva o ID no cache IMEDIATAMENTE, evitando o loop infinito do ClienteDashboard
+        // Compatibilidade temporaria com telas que ainda usam clienteId no storage.
         localStorage.setItem('clienteId', session.user.id);
-        
-        // 2. Busca no banco se é admin (Sem risco de Lock)
-        const { data, error } = await supabase
-          .from('clientes')
-          .select('eh_admin')
-          .eq('id', session.user.id)
-          .single();
 
-        if (error) throw error;
-
-        if (isMounted) {
-          setUser(session.user);
-          setIsAdmin(data?.eh_admin || false);
-        }
-      } catch (error) {
-        console.error("Erro AuthContext:", error);
         if (isMounted) {
           setUser(session.user);
           setIsAdmin(false);
+          setEmpresaAtual(null);
+          setPapelEmpresa(null);
+        }
+      } catch (error) {
+        console.error('Erro AuthContext:', error);
+        if (isMounted) {
+          setUser(session.user);
+          setIsAdmin(false);
+          setEmpresaAtual(null);
+          setPapelEmpresa(null);
         }
       } finally {
-        // 3. Libera o carregamento SÓ QUANDO sabe para onde você vai
-        if (isMounted) setLoading(false); 
+        if (isMounted) setLoading(false);
       }
     };
 
-    // Fica escutando qualquer login ou carregamento de página
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
-      
+
       if (event === 'SIGNED_OUT') {
         localStorage.clear();
         sessionStorage.clear();
       }
-      
-      // Trava a tela (mostra null/branco rápido) até a função de cima terminar
+
       setLoading(true);
       handleSession(session);
     });
@@ -71,10 +109,16 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAdmin, loading, authenticated: !!user }}>
+    <AuthContext.Provider value={{
+      user,
+      isAdmin,
+      empresaAtual,
+      papelEmpresa,
+      loading,
+      authenticated: !!user,
+      selecionarEmpresaPorSlug,
+    }}>
       {!loading && children}
     </AuthContext.Provider>
   );
 };
-
-export const useAuth = () => useContext(AuthContext);

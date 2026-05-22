@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 
-export default function ModalFiliais({ isOpen, onClose }) {
+export default function ModalFiliais({ isOpen, onClose, empresaId }) {
   const [filiais, setFiliais] = useState([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -9,20 +10,21 @@ export default function ModalFiliais({ isOpen, onClose }) {
   const [adicionando, setAdicionando] = useState(false);
   const [erro, setErro] = useState('');
 
-  useEffect(() => {
-    if (isOpen) carregarFiliais();
-  }, [isOpen]);
-
-  const carregarFiliais = async () => {
+  const carregarFiliais = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('filiais')
       .select('*')
+      .eq('empresa_id', empresaId)
       .order('created_at', { ascending: true });
 
     if (!error) setFiliais(data || []);
     setLoading(false);
-  };
+  }, [empresaId]);
+
+  useEffect(() => {
+    if (isOpen && empresaId) carregarFiliais();
+  }, [isOpen, empresaId, carregarFiliais]);
 
   const salvarNovaFilial = async () => {
     if (!novaFilial.nome.trim()) {
@@ -33,7 +35,7 @@ export default function ModalFiliais({ isOpen, onClose }) {
     setErro('');
     const { error } = await supabase
       .from('filiais')
-      .insert([{ nome: novaFilial.nome.trim(), endereco: novaFilial.endereco.trim() }]);
+      .insert([{ nome: novaFilial.nome.trim(), endereco: novaFilial.endereco.trim(), empresa_id: empresaId }]);
 
     if (error) {
       setErro('Erro ao salvar. Tente novamente.');
@@ -49,7 +51,8 @@ export default function ModalFiliais({ isOpen, onClose }) {
     const { error } = await supabase
       .from('filiais')
       .update({ ativa: !filial.ativa })
-      .eq('id', filial.id);
+      .eq('id', filial.id)
+      .eq('empresa_id', empresaId);
 
     if (!error) carregarFiliais();
   };
@@ -168,8 +171,4 @@ export default function ModalFiliais({ isOpen, onClose }) {
       </div>
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 4c36692a0a1ea82a40481eea5fa9c621959b9324

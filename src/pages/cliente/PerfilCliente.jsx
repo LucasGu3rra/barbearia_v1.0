@@ -1,24 +1,25 @@
-import { useEffect, useState } from 'react';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { useAuth } from '../../contexts/useAuth';
 
 export default function PerfilCliente() {
   const navigate = useNavigate();
+  const { user, empresaAtual, loading: authLoading } = useAuth();
+  const empresaId = empresaAtual?.id;
   const [dados, setDados] = useState({ nome: '', whatsapp: '', plano: '' });
   const [loading, setLoading] = useState(true);
 
   const precos = { cabelo: 70, barba: 50, completo: 110 };
   const nomesPlanos = { cabelo: 'Só Cabelo', barba: 'Só Barba', completo: 'Cabelo & Barba' };
 
-  useEffect(() => {
-    carregarPerfil();
-  }, []);
-
-  async function carregarPerfil() {
-    const id = localStorage.getItem('clienteId');
+  const carregarPerfil = useCallback(async () => {
+    const id = user?.id || localStorage.getItem('clienteId');
     const { data: cli } = await supabase
       .from('clientes')
       .select('nome, whatsapp, assinaturas(plano_escolhido)')
+      .eq('empresa_id', empresaId)
       .eq('id', id).single();
 
     if (cli) {
@@ -29,7 +30,12 @@ export default function PerfilCliente() {
       });
     }
     setLoading(false);
-  }
+  }, [empresaId, user?.id]);
+
+  useEffect(() => {
+    if (authLoading || !empresaId) return;
+    carregarPerfil();
+  }, [authLoading, empresaId, carregarPerfil]);
 
   async function alterarPlano(novoPlano) {
     if (novoPlano === dados.plano) return;
@@ -40,10 +46,11 @@ export default function PerfilCliente() {
       : `Deseja mudar para ${nomesPlanos[novoPlano]}? Não haverá reembolso da diferença, e a mudança valerá imediatamente. Confirma?`;
 
     if (window.confirm(mensagem)) {
-      const id = localStorage.getItem('clienteId');
+      const id = user?.id || localStorage.getItem('clienteId');
       const { error } = await supabase
         .from('assinaturas')
         .update({ plano_escolhido: novoPlano })
+        .eq('empresa_id', empresaId)
         .eq('cliente_id', id);
 
       if (!error) {

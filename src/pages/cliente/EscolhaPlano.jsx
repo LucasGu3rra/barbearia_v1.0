@@ -1,38 +1,66 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { useAuth } from '../../contexts/useAuth';
+import { getEmpresaPorSlug, montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
+
+const formatarMoeda = (valor) => `R$${Number(valor || 0).toFixed(0)}`;
+
+function Icon({ name, className = 'w-5 h-5' }) {
+  const icons = {
+    arrow: <path d="m15 18-6-6 6-6" />,
+    check: <path d="M20 6 9 17l-5-5" />,
+    copy: <><rect x="9" y="9" width="13" height="13" rx="2" /><rect x="2" y="2" width="13" height="13" rx="2" /></>,
+    money: <><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2" /></>,
+    whatsapp: <><path d="M3 21 4.8 16.3A8.5 8.5 0 1 1 8 19.2L3 21z" /><path d="M9 9c.2 3 2.8 5.3 6 6" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 8h.01" /><path d="M11 12h1v4h1" /></>,
+    store: <><path d="M3 9h18l-1-5H4L3 9z" /><path d="M5 9v10h14V9" /><path d="M9 19v-6h6v6" /></>,
+    trend: <><path d="m3 7 6 6 4-4 8 8" /><path d="M21 10v7h-7" /></>,
+  };
+
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {icons[name] || icons.check}
+    </svg>
+  );
+}
 
 export default function EscolhaPlano() {
   const navigate = useNavigate();
-  const [loadingId, setLoadingId] = useState(null); 
+  const { empresaSlug } = useParams();
+  const { user, empresaAtual } = useAuth();
+  const [empresa, setEmpresa] = useState(empresaAtual);
+  const [loadingId, setLoadingId] = useState(null);
   const [nomeCliente, setNomeCliente] = useState('');
-  
-  // Controle de exibição (Avulsos vs Planos)
-  const [mostrarPlanos, setMostrarPlanos] = useState(false);
-  
-  // Estados do Modal de Checkout
-  const [modalAberto, setModalAberto] = useState(false);
   const [planoSelecionado, setPlanoSelecionado] = useState(null);
-  const [metodoPagamento, setMetodoPagamento] = useState('pix');
+  const [modalAberto, setModalAberto] = useState(false);
   const [pixCopiado, setPixCopiado] = useState(false);
-
-  const CHAVE_PIX = "81988468182";
-  const WHATSAPP_JOAO = "5581988468182"; 
-
   const [planos, setPlanos] = useState([]);
-  const [carregandoPlanos, setCarregandoPlanos] = useState(true);
-
-  // Serviços avulsos vindos do banco
   const [servicosAvulsos, setServicosAvulsos] = useState([]);
-  const [carregandoServicos, setCarregandoServicos] = useState(true);
+  const [carregando, setCarregando] = useState(true);
+
+  const chavePix = empresa?.chave_pix || '81988468182';
+  const whatsappBarbearia = normalizarTelefoneBrasil(empresa?.whatsapp || '5581988468182');
+  const empresaNome = (empresa?.nome || 'JOAO BARBER').toUpperCase();
 
   useEffect(() => {
     const buscarDados = async () => {
       try {
-        // Busca planos e serviços em paralelo
+        if (empresaAtual && empresaSlug && empresaAtual.slug !== empresaSlug) {
+          navigate('/');
+          return;
+        }
+
+        const empresaBase = empresaAtual || await getEmpresaPorSlug(empresaSlug);
+        if (!empresaBase) {
+          navigate('/');
+          return;
+        }
+
+        setEmpresa(empresaBase);
         const [{ data: dadosPlanos, error: errPlanos }, { data: dadosServicos, error: errServicos }] = await Promise.all([
-          supabase.from('planos').select('*').eq('ativo', true).order('preco', { ascending: true }),
-          supabase.from('servicos').select('*').eq('ativo', true).order('created_at', { ascending: true }),
+          supabase.from('planos').select('*').eq('empresa_id', empresaBase.id).eq('ativo', true).is('deleted_at', null).order('preco', { ascending: true }),
+          supabase.from('servicos').select('*, servico_categorias(nome), servico_subcategorias(nome)').eq('empresa_id', empresaBase.id).eq('ativo', true).is('deleted_at', null).order('created_at', { ascending: true }),
         ]);
 
         if (errPlanos) throw errPlanos;
@@ -40,301 +68,250 @@ export default function EscolhaPlano() {
 
         setPlanos(dadosPlanos || []);
         setServicosAvulsos(dadosServicos || []);
+        setPlanoSelecionado((dadosPlanos || [])[0] || null);
       } catch (error) {
-        console.error("Erro ao carregar dados:", error);
+        console.error('Erro ao carregar planos:', error);
       } finally {
-        setCarregandoPlanos(false);
-        setCarregandoServicos(false);
+        setCarregando(false);
       }
     };
+
     buscarDados();
-  }, []);
+  }, [empresaAtual, empresaSlug, navigate]);
 
   useEffect(() => {
     const buscarNome = async () => {
-      const id = localStorage.getItem('clienteId');
-      if (id) {
-        const { data } = await supabase.from('clientes').select('nome').eq('id', id).single();
-        if (data) setNomeCliente(data.nome);
-      }
-    };
-    buscarNome();
-  }, []);
+      const id = user?.id || localStorage.getItem('clienteId');
+      const empresaId = empresa?.id || empresaAtual?.id;
+      if (!id || !empresaId) return;
 
-  const abrirCheckout = (plano) => {
-    setPlanoSelecionado(plano);
-    setMetodoPagamento('pix');
-    setPixCopiado(false);
-    setModalAberto(true);
+      const { data } = await supabase.from('clientes').select('nome').eq('empresa_id', empresaId).eq('id', id).maybeSingle();
+      if (data) setNomeCliente(data.nome);
+    };
+
+    buscarNome();
+  }, [empresa, empresaAtual, user?.id]);
+
+  const voltar = () => {
+    const slug = empresa?.slug || empresaAtual?.slug || empresaSlug;
+    navigate(montarRotaEmpresa(slug, '/dashboard'));
   };
 
   const copiarPix = () => {
-    navigator.clipboard.writeText(CHAVE_PIX);
+    navigator.clipboard.writeText(chavePix);
     setPixCopiado(true);
-    setTimeout(() => setPixCopiado(false), 3000);
+    setTimeout(() => setPixCopiado(false), 2000);
   };
 
-  async function confirmarContratacao() {
-    const clienteId = localStorage.getItem('clienteId');
-    if (!clienteId) return navigate('/');
+  const calcularEconomia = (plano) => {
+    if (!plano || servicosAvulsos.length === 0) return 0;
+
+    const nomePlano = plano.nome?.toLowerCase() || '';
+    const servicoMesmoNome = servicosAvulsos.find((servico) => nomePlano.includes((servico.nome || '').toLowerCase()));
+    const servicoRef = servicoMesmoNome || [...servicosAvulsos].sort((a, b) => Number(b.preco) - Number(a.preco))[0];
+    return Math.max(0, Number(servicoRef?.preco || 0) * Number(plano.limite || 1) - Number(plano.preco || 0));
+  };
+
+  const beneficiosPlano = (plano) => {
+    const limite = Number(plano?.limite || 0);
+    return [
+      plano?.ilimitado ? 'Cortes ilimitados' : limite > 0 ? `${limite} cortes/mês` : 'Uso mensal',
+      'Agendamento',
+      'Sem taxa extra',
+    ];
+  };
+
+  async function confirmarContratacao(enviarWhatsapp = true) {
+    const clienteId = user?.id || localStorage.getItem('clienteId');
+    if (!clienteId) return navigate(montarRotaEmpresa(empresaSlug, ''));
+    if (!planoSelecionado) return;
 
     setLoadingId(planoSelecionado.slug);
     setModalAberto(false);
 
     try {
-      const { data: assinaturaExistente } = await supabase.from('assinaturas').select('*').eq('cliente_id', clienteId).maybeSingle();
+      const empresaId = empresa?.id || empresaAtual?.id;
+      const empresaSlugDestino = empresa?.slug || empresaAtual?.slug || empresaSlug;
+      if (!empresaId || !empresaSlugDestino) throw new Error('Empresa inválida.');
+
+      const { data: assinaturaExistente } = await supabase
+        .from('assinaturas')
+        .select('*')
+        .eq('empresa_id', empresaId)
+        .eq('cliente_id', clienteId)
+        .maybeSingle();
 
       if (assinaturaExistente) {
-        await supabase.from('assinaturas').update({ plano_escolhido: planoSelecionado.slug, status: 'pendente' }).eq('cliente_id', clienteId);
+        await supabase
+          .from('assinaturas')
+          .update({ plano_escolhido: planoSelecionado.slug, status: 'pendente' })
+          .eq('empresa_id', empresaId)
+          .eq('cliente_id', clienteId);
       } else {
-        await supabase.from('assinaturas').insert([{ cliente_id: clienteId, plano_escolhido: planoSelecionado.slug, status: 'pendente' }]);
+        await supabase
+          .from('assinaturas')
+          .insert([{ cliente_id: clienteId, empresa_id: empresaId, plano_escolhido: planoSelecionado.slug, status: 'pendente' }]);
       }
 
-      let mensagem = `Olá João! Me chamo *${nomeCliente}*.\nAcabei de solicitar o *Plano ${planoSelecionado.nome}* no aplicativo.\n\n`;
-      
-      if (metodoPagamento === 'pix') {
-        mensagem += `💳 Forma de pagamento: *PIX*\nSegue o meu comprovante abaixo:`;
-      } else {
-        mensagem += `💵 Forma de pagamento: *${metodoPagamento === 'cartao' ? 'Cartão' : 'Dinheiro'}*\nFarei o acerto presencialmente na barbearia para você ativar meu plano!`;
+      if (enviarWhatsapp) {
+        const mensagem = `Olá! Me chamo *${nomeCliente}*.\nAcabei de solicitar o *Plano ${planoSelecionado.nome}* no aplicativo.\n\nForma de pagamento: *PIX*\nSegue o meu comprovante abaixo:`;
+        window.open(`https://wa.me/${whatsappBarbearia}?text=${encodeURIComponent(mensagem)}`, '_blank');
       }
 
-      const urlWhatsapp = `https://wa.me/${WHATSAPP_JOAO}?text=${encodeURIComponent(mensagem)}`;
-      
-      window.open(urlWhatsapp, '_blank');
-      navigate('/dashboard');
-
+      navigate(montarRotaEmpresa(empresaSlugDestino, '/dashboard'));
     } catch (error) {
-      alert("Houve um erro ao salvar sua escolha. Tente novamente.");
-      setLoadingId(null); 
+      console.error('Erro ao contratar plano:', error);
+      alert('Houve um erro ao salvar sua escolha. Tente novamente.');
+      setLoadingId(null);
     }
   }
 
-  // Calcula a economia de um plano com base nos serviços cadastrados:
-  // Usa o serviço de maior preço como referência (pior caso = mais economia visível)
-  const calcularEconomiaDinamica = (nomePlano, precoPlano, limitePlano) => {
-    if (servicosAvulsos.length === 0) return 0;
-
-    // Tenta encontrar um serviço cujo nome bate com o nome do plano
-    const nomeLower = nomePlano.toLowerCase();
-    let servicoRef = servicosAvulsos.find(s => nomeLower.includes(s.nome.toLowerCase()));
-
-    // Se não encontrou, usa o serviço de maior preço como referência
-    if (!servicoRef) {
-      servicoRef = [...servicosAvulsos].sort((a, b) => b.preco - a.preco)[0];
-    }
-
-    const limite = limitePlano || 4;
-    return (Number(servicoRef.preco) * limite) - Number(precoPlano);
-  };
-
   return (
-    <div className="min-h-screen bg-[#09090b] text-white p-6 font-sans flex flex-col items-center relative overflow-x-hidden">
-      
-      <header className="mb-8 text-center mt-6">
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <div className="w-1.5 h-1.5 bg-[#CEAA6B] rounded-full"></div>
-          <span className="text-[#CEAA6B] text-[10px] font-bold tracking-[0.3em] uppercase">Barbearia do João</span>
+    <div className="client-page-root">
+      <div className="client-device">
+        <div className="back-bar">
+          <button className="back-btn" onClick={voltar}>
+            <Icon name="arrow" className="w-4 h-4" />
+          </button>
+          <span className="back-title">Planos mensais</span>
         </div>
-        <h1 className="text-2xl font-bold">{mostrarPlanos ? 'Escolha sua Assinatura' : 'Nossos Serviços'}</h1>
-        <p className="text-zinc-500 text-sm mt-2">
-          {mostrarPlanos ? 'Selecione o plano ideal para você' : 'Veja quanto você pode economizar'}
-        </p>
-      </header>
 
-      <div className="w-full max-w-[360px] flex-1">
-        
-        {/* TELA 1: SERVIÇOS AVULSOS */}
-        {!mostrarPlanos ? (
-          <div className="space-y-4 animate-[fadeIn_0.3s_ease-in-out]">
-            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest pl-1 mb-2">Serviços Avulsos</p>
-            
-            {carregandoServicos ? (
-              <div className="text-center text-[#CEAA6B] animate-pulse py-10 text-xs uppercase tracking-widest">Carregando serviços...</div>
-            ) : servicosAvulsos.length === 0 ? (
-              <div className="text-center py-10 border border-dashed border-[#27272a] rounded-2xl">
-                <p className="text-zinc-600 text-xs italic">Nenhum serviço disponível no momento.</p>
-              </div>
-            ) : (
-              servicosAvulsos.map((servico) => {
-                // Referência: gasto em 4x no mês vs plano mais barato disponível
-                const gastoRotinaNormal = Number(servico.preco) * 4;
-                // Pega o plano mais barato para mostrar a comparação
-                const planoCheap = planos.length > 0 ? planos[0] : null;
-                const precoPlanoRef = planoCheap ? Number(planoCheap.preco) : null;
-                const economiaTotal = precoPlanoRef !== null
-                  ? (Number(servico.preco) * (planoCheap.limite || 4)) - precoPlanoRef
-                  : null;
+        <div className="scroll" style={{ paddingTop: 12 }}>
+          <div className="client-brand" style={{ maxWidth: '100%', textAlign: 'center', marginBottom: 4 }}>
+            {empresaNome}
+          </div>
 
-                return (
-                  <div key={servico.id} className="bg-[#121212] border border-[#27272a] p-5 rounded-[24px]">
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="font-bold text-lg text-white">{servico.nome}</span>
-                      <span className="text-zinc-400 font-medium">R$ {Number(servico.preco).toFixed(0)}</span>
-                    </div>
-                    
-                    {/* Caixa de Destaque da Economia */}
-                    <div className="bg-[#1a120b] border border-[#CEAA6B]/30 rounded-xl p-4 relative overflow-hidden">
-                      <div className="absolute -right-4 -top-4 w-16 h-16 bg-[#CEAA6B]/10 blur-xl rounded-full"></div>
-                      
-                      <p className="text-zinc-400 text-xs mb-1 relative z-10">
-                        Cortando só 4x no mês você já gastaria{' '}
-                        <span className="line-through text-red-400/80">R$ {gastoRotinaNormal.toFixed(0)}</span>
-                      </p>
-                      
-                      {planoCheap && economiaTotal !== null && (
-                        <div className="flex justify-between items-end mt-2 relative z-10">
-                          <div>
-                            <p className="text-[#CEAA6B] font-bold text-sm">
-                              No Plano ({planoCheap.limite} cortes): R$ {Number(planoCheap.preco).toFixed(0)}
-                            </p>
-                          </div>
-                          {economiaTotal > 0 && (
-                            <div className="bg-[#CEAA6B] text-black text-[9px] font-black uppercase px-2 py-1 rounded shadow-[0_0_8px_rgba(206,170,107,0.4)] whitespace-nowrap ml-2">
-                              Economize R$ {economiaTotal.toFixed(0)}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-
-            {/* BOTÃO CHAMATIVO PARA IR AOS PLANOS */}
-            <div className="pt-4 pb-8">
-              <button 
-                onClick={() => setMostrarPlanos(true)}
-                className="w-full bg-[#CEAA6B] text-black font-black uppercase tracking-wider py-4 rounded-xl shadow-[0_0_20px_rgba(206,170,107,0.3)] animate-pulse hover:scale-[1.02] transition-transform flex items-center justify-center gap-2"
-              >
-                Ver Planos com Desconto
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              </button>
+          <div className="alert ok">
+            <Icon name="trend" className="w-5 h-5 flex-shrink-0" />
+            <div className="alert-txt">
+              Com plano você paga menos por corte e mantém sua assinatura organizada.
             </div>
           </div>
-        ) : (
-          
-          /* TELA 2: LISTA DE PLANOS DO BANCO DE DADOS */
-          <div className="space-y-4 animate-[fadeIn_0.3s_ease-in-out]">
-            <button 
-              onClick={() => setMostrarPlanos(false)}
-              className="mb-2 text-[#CEAA6B] text-xs font-bold uppercase tracking-widest flex items-center gap-1"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
-              Voltar aos serviços
-            </button>
 
-            {carregandoPlanos ? (
-              <div className="text-center text-[#CEAA6B] animate-pulse py-10">Carregando planos...</div>
-            ) : (
-              planos.map((plano) => {
-                const economiaCalculada = calcularEconomiaDinamica(plano.nome, plano.preco, plano.limite);
+          {carregando ? (
+            <div className="text-center text-[#d5b451] animate-pulse py-10 text-xs uppercase tracking-widest">Carregando planos...</div>
+          ) : planos.length === 0 ? (
+            <div className="text-center py-10 border border-dashed border-[#333] rounded-[12px]">
+              <p className="text-zinc-600 text-xs italic">Nenhum plano disponível no momento.</p>
+            </div>
+          ) : (
+            <div className="plan-grid">
+              {planos.map((plano, index) => {
+                const economia = calcularEconomia(plano);
+                const selecionado = planoSelecionado?.slug === plano.slug;
 
                 return (
                   <button
                     key={plano.slug}
-                    onClick={() => abrirCheckout(plano)}
+                    type="button"
+                    className={`plan-card ${index === 0 ? 'featured' : ''} ${selecionado ? 'sel' : ''}`}
+                    onClick={() => setPlanoSelecionado(plano)}
                     disabled={loadingId !== null}
-                    className={`w-full bg-[#121212] border border-[#27272a] p-6 rounded-[24px] text-left transition-all relative overflow-hidden group ${loadingId !== null ? 'opacity-50 cursor-not-allowed' : 'hover:border-[#CEAA6B]/50 active:scale-[0.98]'}`}
                   >
-                    {economiaCalculada > 0 && (
-                      <div className="absolute top-0 right-0 bg-[#CEAA6B] text-black text-[8px] font-black uppercase px-3 py-1 rounded-bl-lg">
-                        Economia de R$ {economiaCalculada.toFixed(0)}
-                      </div>
-                    )}
-
-                    <div className="flex justify-between items-end mb-2 mt-2">
-                      <div>
-                        <span className="block font-bold text-lg text-white group-hover:text-[#CEAA6B] transition-colors">{plano.nome}</span>
-                        <span className="text-zinc-500 text-xs font-medium">{plano.limite} cortes garantidos</span>
-                      </div>
-                      <div className="text-right">
-                        {economiaCalculada > 0 && (
-                          <span className="block text-zinc-500 text-[10px] line-through mb-0.5">
-                            Valor Real R$ {(Number(plano.preco) + economiaCalculada).toFixed(0)}
-                          </span>
-                        )}
-                        <span className="text-[#CEAA6B] font-black text-xl">
-                          {loadingId === plano.slug 
-                            ? <span className="text-sm animate-pulse">Salvando...</span> 
-                            : <>R$ {Number(plano.preco).toFixed(0)}<small className="text-[10px] text-zinc-600 ml-1 uppercase">/mês</small></>
-                          }
-                        </span>
-                      </div>
+                    <div className="plan-chk">
+                      <Icon name="check" className="w-3 h-3" />
+                    </div>
+                    {index === 0 ? <div className="pop-label">Popular</div> : <div style={{ height: 22 }} />}
+                    <div className="plan-name">{plano.nome}</div>
+                    <div className="plan-price">
+                      <span className="val">{Number(plano.preco || 0).toFixed(0)}</span>
+                      <span className="per">/mês</span>
+                    </div>
+                    <ul className="plan-feats">
+                      {beneficiosPlano(plano).map((beneficio) => (
+                        <li key={beneficio}>
+                          <Icon name="check" className="w-3 h-3 text-[#d5b451] flex-shrink-0" />
+                          {beneficio}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="economy-tag">
+                      {economia > 0 ? `Economia de R$${economia.toFixed(0)}` : 'Melhor custo'}
                     </div>
                   </button>
                 );
-              })
-            )}
-          </div>
-        )}
+              })}
+            </div>
+          )}
+
+          <button className="btn primary" disabled={!planoSelecionado || loadingId !== null} onClick={() => setModalAberto(true)}>
+            {loadingId ? 'Salvando...' : 'Contratar plano'}
+          </button>
+          <button className="btn ghost" onClick={voltar}>Agora não</button>
+        </div>
       </div>
 
-      <div className="mt-auto pt-6 mb-4 text-center">
-        <p className="text-zinc-600 text-[10px] uppercase tracking-[0.2em] leading-relaxed">
-          O pagamento e a ativação <br/>
-          serão realizados diretamente na barbearia.
-        </p>
-      </div>
-
-      {/* MODAL DE CHECKOUT */}
       {modalAberto && planoSelecionado && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity p-4 sm:p-6 pb-0 sm:pb-6">
-          <div className="bg-[#121212] border border-[#27272a] rounded-t-[32px] sm:rounded-[32px] w-full max-w-[400px] p-6 pb-10 sm:pb-6 animate-[slideUp_0.3s_ease-out]">
-            
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-xl font-bold text-white mb-1">Finalizar Contratação</h3>
-                <p className="text-[#CEAA6B] font-bold">Plano {planoSelecionado.nome} • R$ {Number(planoSelecionado.preco).toFixed(0)}/mês</p>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-0">
+          <div className="client-device rounded-t-[28px] sm:rounded-[28px] min-h-0 max-h-[92vh] overflow-y-auto">
+            <div className="back-bar">
+              <button className="back-btn" onClick={() => setModalAberto(false)}>
+                <Icon name="arrow" className="w-4 h-4" />
+              </button>
+              <span className="back-title">Pagamento</span>
+            </div>
+
+            <div className="scroll" style={{ paddingTop: 12 }}>
+              <div className="card">
+                <div className="stat-lbl">PLANO SELECIONADO</div>
+                <div className="flex items-center justify-between mt-2 gap-3">
+                  <div className="text-white text-sm font-semibold">Plano {planoSelecionado.nome}</div>
+                  <div className="text-[#d5b451] text-[22px] font-black">{formatarMoeda(planoSelecionado.preco)}</div>
+                </div>
               </div>
-              <button onClick={() => setModalAberto(false)} className="w-8 h-8 flex items-center justify-center bg-[#27272a] text-zinc-400 rounded-full text-sm font-bold">✕</button>
-            </div>
 
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Forma de Pagamento</p>
-            <div className="grid grid-cols-3 gap-2 mb-6">
-              <button onClick={() => setMetodoPagamento('pix')} className={`py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${metodoPagamento === 'pix' ? 'border-[#25D366] bg-[#25D366]/10 text-[#25D366]' : 'border-[#27272a] bg-[#09090b] text-zinc-500'}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                <span className="text-[10px] font-bold uppercase">PIX</span>
-              </button>
-              <button onClick={() => setMetodoPagamento('cartao')} className={`py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${metodoPagamento === 'cartao' ? 'border-[#CEAA6B] bg-[#CEAA6B]/10 text-[#CEAA6B]' : 'border-[#27272a] bg-[#09090b] text-zinc-500'}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-                <span className="text-[10px] font-bold uppercase">Cartão</span>
-              </button>
-              <button onClick={() => setMetodoPagamento('dinheiro')} className={`py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${metodoPagamento === 'dinheiro' ? 'border-[#CEAA6B] bg-[#CEAA6B]/10 text-[#CEAA6B]' : 'border-[#27272a] bg-[#09090b] text-zinc-500'}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2"></circle></svg>
-                <span className="text-[10px] font-bold uppercase">Dinheiro</span>
-              </button>
-            </div>
+              <div className="pix-box">
+                <div className="pix-title">
+                  <div className="pix-title-ico">
+                    <Icon name="money" className="w-4 h-4" />
+                  </div>
+                  <div className="text-white text-sm font-semibold">Pagar via Pix</div>
+                </div>
 
-            {metodoPagamento === 'pix' ? (
-              <div className="bg-[#09090b] border border-[#27272a] rounded-2xl p-4 mb-6">
-                <p className="text-zinc-400 text-xs mb-3">1. Copie a chave PIX abaixo e faça o pagamento no seu banco.</p>
-                <div className="flex gap-2">
-                  <input readOnly value={CHAVE_PIX} className="flex-1 bg-[#121212] text-[#25D366] font-medium text-sm px-3 py-2.5 rounded-lg border border-[#27272a] outline-none" />
-                  <button onClick={copiarPix} className="bg-[#27272a] text-white px-4 py-2.5 rounded-lg text-xs font-bold uppercase hover:bg-[#3f3f46] transition-colors">
+                <div className="pix-key">
+                  <span>{chavePix}</span>
+                  <button type="button" className="pix-copy" onClick={copiarPix}>
+                    <Icon name="copy" className="w-3 h-3" />
                     {pixCopiado ? 'Copiado!' : 'Copiar'}
                   </button>
                 </div>
-                <p className="text-zinc-400 text-xs mt-4">2. Depois, clique no botão verde para enviar o comprovante.</p>
-              </div>
-            ) : (
-              <div className="bg-[#09090b] border border-[#27272a] rounded-2xl p-4 mb-6 text-center">
-                <p className="text-zinc-400 text-sm">Você pagará na barbearia.</p>
-                <p className="text-zinc-500 text-xs mt-1">Seu plano só será ativado após o acerto na barbearia.</p>
-              </div>
-            )}
 
-            <button onClick={confirmarContratacao} className={`w-full font-bold text-sm uppercase tracking-wider py-4 rounded-xl active:scale-95 transition-transform flex items-center justify-center gap-2 ${metodoPagamento === 'pix' ? 'bg-[#25D366] text-black hover:bg-[#20b858]' : 'bg-[#CEAA6B] text-black hover:bg-[#b08f55]'}`}>
-              {metodoPagamento === 'pix' ? 'Confirmar e Enviar PIX' : 'Confirmar Pagamento'}
-            </button>
+                <ul className="pix-steps">
+                  <li><div className="pix-n">1</div>Copie a chave Pix acima</li>
+                  <li><div className="pix-n">2</div>Abra seu banco e faça a transferência</li>
+                  <li><div className="pix-n">3</div>Tire print do comprovante</li>
+                  <li><div className="pix-n">4</div>Envie pelo botão abaixo no WhatsApp</li>
+                </ul>
+              </div>
+
+              <button className="btn primary flex items-center justify-center gap-2" onClick={() => confirmarContratacao(true)}>
+                <Icon name="whatsapp" className="w-4 h-4" />
+                Enviar comprovante no WhatsApp
+              </button>
+
+              <div className="alert warn">
+                <Icon name="info" className="w-5 h-5 flex-shrink-0" />
+                <div className="alert-txt">
+                  Seu plano será ativado em até <strong>24h</strong> após a confirmação do pagamento pelo barbeiro.
+                </div>
+              </div>
+
+              <div className="sec">OUTRAS FORMAS</div>
+              <div className="card">
+                <div className="flex items-center gap-3">
+                  <Icon name="store" className="w-5 h-5 text-zinc-500" />
+                  <div>
+                    <div className="text-[#d8d3c8] text-sm font-semibold">Cartão ou dinheiro</div>
+                    <div className="text-zinc-500 text-xs mt-0.5">Pagamento presencial na barbearia</div>
+                  </div>
+                </div>
+              </div>
+
+              <button className="btn ghost" onClick={() => confirmarContratacao(false)}>Fazer depois</button>
+            </div>
           </div>
         </div>
       )}
-      
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-      `}} />
     </div>
   );
 }

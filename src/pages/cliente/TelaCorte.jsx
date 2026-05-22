@@ -1,9 +1,16 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { useAuth } from '../../contexts/useAuth';
+import { montarRotaEmpresa } from '../../services/empresa';
 
 export default function TelaCorte() {
   const navigate = useNavigate();
+  const { empresaSlug } = useParams();
+  const { user, empresaAtual, loading: authLoading } = useAuth();
+  const empresaId = empresaAtual?.id;
+  const slugEmpresa = empresaAtual?.slug || empresaSlug;
   const [dados, setDados] = useState({ 
     nome: '', 
     cortes: 0, 
@@ -12,12 +19,8 @@ export default function TelaCorte() {
     limiteTotal: 0 // Novo campo para o limite dinâmico
   });
 
-  useEffect(() => {
-    carregarDadosValidacao();
-  }, []);
-
-  async function carregarDadosValidacao() {
-    const id = localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
+  const carregarDadosValidacao = useCallback(async () => {
+    const id = user?.id || localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
     
     if (!id) {
         navigate('/');
@@ -25,23 +28,26 @@ export default function TelaCorte() {
     }
 
     // 1. Busca os planos para saber os limites
-    const { data: dadosPlanos } = await supabase.from('planos').select('slug, limite');
-    const mapaLimites = {};
-    dadosPlanos?.forEach(p => { mapaLimites[p.slug] = p.limite; });
+    const { data: dadosPlanos } = await supabase.from('planos').select('slug, limite, ilimitado').eq('empresa_id', empresaId);
+    const mapaPlanos = {};
+    dadosPlanos?.forEach(p => { mapaPlanos[p.slug] = p; });
 
     // 2. Busca dados do cliente e assinatura
     const { data: cli } = await supabase
       .from('clientes')
       .select('nome, assinaturas(data_vencimento, plano_escolhido)')
+      .eq('empresa_id', empresaId)
       .eq('id', id).single();
 
     const assinatura = cli?.assinaturas?.[0];
-    const limiteDoPlano = mapaLimites[assinatura?.plano_escolhido] || 0;
+    const planoAtual = mapaPlanos[assinatura?.plano_escolhido] || null;
+    const limiteDoPlano = planoAtual?.ilimitado ? 0 : planoAtual?.limite || 0;
 
     // 3. Busca o ÚLTIMO corte para mostrar o tipo
     const { data: ultimoCorte } = await supabase
       .from('historico_cortes')
       .select('tipo_corte, created_at')
+      .eq('empresa_id', empresaId)
       .eq('cliente_id', id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -54,19 +60,31 @@ export default function TelaCorte() {
     const { count } = await supabase
       .from('historico_cortes')
       .select('*', { count: 'exact', head: true })
+      .eq('empresa_id', empresaId)
       .eq('cliente_id', id)
       .gte('created_at', primeiroDiaMes);
 
     setDados({
       nome: cli?.nome || 'Cliente',
       cortes: count || 0,
+      ilimitado: Boolean(planoAtual?.ilimitado),
       limiteTotal: limiteDoPlano,
       vencimento: assinatura?.data_vencimento 
         ? new Date(assinatura.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
         : '--/--',
       tipoCorte: ultimoCorte?.tipo_corte || 'Nenhum corte registrado'
     });
-  }
+  }, [empresaId, navigate, user?.id]);
+
+  useEffect(() => {
+    if (authLoading || !empresaId) return;
+    if (!empresaSlug || empresaAtual?.slug !== empresaSlug) {
+      navigate('/');
+      return;
+    }
+
+    carregarDadosValidacao();
+  }, [authLoading, empresaId, empresaSlug, empresaAtual?.slug, navigate, carregarDadosValidacao]);
 
   const scissorsPath = "M9.64,7.64 C9.87,7.14 10,6.59 10,6 C10,3.79 8.21,2 6,2 C3.79,2 2,3.79 2,6 C2,8.21 3.79,10 6,10 C6.59,10 7.14,9.87 7.64,9.64 L10,12 L7.64,14.36 C7.14,14.13 6.59,14 6,14 C3.79,14 2,15.79 2,18 C2,20.21 3.79,22 6,22 C8.21,22 10,20.21 10,18 C10,17.41 9.87,16.86 9.64,16.36 L12,14 L19,21 H22 V20 L9.64,7.64 Z M6,8 C4.9,8 4,7.1 4,6 C4,4.9 4.9,4 6,4 C7.1,4 8,4.9 8,6 C8,7.1 7.1,8 6,8 Z M6,20 C4.9,20 4,19.1 4,18 C4,16.9 4.9,16 6,16 C7.1,16 8,16.9 8,18 C8,19.1 7.1,20 6,20 Z M19,3 L12,10 L14,12 L22,4 V3 H19 Z";
 
@@ -123,8 +141,8 @@ export default function TelaCorte() {
           <div className="bg-[#070c08] border border-[#102115] p-4 rounded-xl text-center">
             <p className="text-[#16582a] text-[9px] font-bold uppercase tracking-wide mb-2">Cortes Restantes</p>
             <p className="text-2xl font-bold text-[#3df474]">
-              {Math.max(0, dados.limiteTotal - dados.cortes)} 
-              <span className="text-[#197034] text-[11px] font-medium ml-1">de {dados.limiteTotal}</span>
+              {dados.ilimitado ? 'Livre' : Math.max(0, dados.limiteTotal - dados.cortes)}
+              <span className="text-[#197034] text-[11px] font-medium ml-1">{dados.ilimitado ? 'ilimitado' : `de ${dados.limiteTotal}`}</span>
             </p>
           </div>
           <div className="bg-[#070c08] border border-[#102115] p-4 rounded-xl text-center">
@@ -137,7 +155,7 @@ export default function TelaCorte() {
       <div className="mt-8 mb-6 text-center">
         <p className="text-[#2a2a2a] text-[11px] font-medium mb-6">Mostre esta tela ao barbeiro</p>
         <button 
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate(montarRotaEmpresa(slugEmpresa, '/dashboard'))}
           className="bg-[#070707] border border-[#1c1c1c] text-[#3f3f3f] px-6 py-2.5 rounded-lg text-sm font-medium hover:text-[#555] transition-colors"
         >
           Voltar ao início
