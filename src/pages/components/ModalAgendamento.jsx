@@ -1,13 +1,14 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabase';
+import ClienteAgendamentoStepBar from '../cliente/ClienteAgendamentoStepBar';
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-const gerarProximosDias = () => {
+const gerarProximosDias = (quantidadeDias = 28) => {
   const dias = [];
   const hoje = new Date();
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < quantidadeDias; i++) {
     const d = new Date(hoje);
     d.setDate(hoje.getDate() + i);
     dias.push(d);
@@ -52,56 +53,6 @@ const horarioCabeNoFuncionamento = (horario, duracao, regra) => {
   }
 
   return true;
-};
-
-const normalizarTexto = (valor = '') => String(valor)
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase()
-  .trim();
-
-const encontrarServicoDoPlano = (servicos, planoCliente) => {
-  if (!planoCliente) return null;
-  const planoSlug = normalizarTexto(planoCliente.planoId);
-  const planoNome = normalizarTexto(planoCliente.planoNome);
-  const planoTexto = `${planoSlug} ${planoNome}`;
-  const planoTemBarba = planoTexto.includes('barba') || planoTexto.includes('completo');
-  const planoTemCabelo = planoTexto.includes('cabelo') || planoTexto.includes('corte') || planoTexto.includes('completo');
-
-  const servicosComTexto = servicos.map((servico) => {
-    const texto = normalizarTexto([
-      servico.nome,
-      servico.servico_categorias?.nome,
-      servico.servico_subcategorias?.nome,
-    ].filter(Boolean).join(' '));
-
-    return {
-      servico,
-      texto,
-      temBarba: texto.includes('barba'),
-      temCabelo: texto.includes('cabelo') || texto.includes('corte') || texto.includes('degrade') || texto.includes('tesoura'),
-    };
-  });
-
-  const exato = servicosComTexto.find(({ texto }) => texto === planoNome || texto.includes(planoSlug) || texto.includes(planoNome));
-  if (exato) return exato.servico;
-
-  if (planoTemCabelo && planoTemBarba) {
-    const servicoCombo = servicosComTexto.find(({ temCabelo, temBarba }) => temCabelo && temBarba);
-    if (servicoCombo) return servicoCombo.servico;
-  }
-
-  if (planoTemBarba) {
-    const servicoBarba = servicosComTexto.find(({ temBarba, temCabelo }) => temBarba && !temCabelo);
-    if (servicoBarba) return servicoBarba.servico;
-  }
-
-  if (planoTemCabelo) {
-    const servicoCabelo = servicosComTexto.find(({ temCabelo, temBarba }) => temCabelo && !temBarba);
-    if (servicoCabelo) return servicoCabelo.servico;
-  }
-
-  return servicosComTexto.find(({ temCabelo, temBarba }) => temCabelo || temBarba)?.servico || servicos[0] || null;
 };
 
 const gerarHorarios = (inicio = '08:00', fim = '19:00', pausaInicio = null, pausaFim = null, data = null) => {
@@ -151,7 +102,6 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
   const [servicoPreSelecionado, setServicoPreSelecionado] = useState(false);
 
   const [filiais, setFiliais] = useState([]);
-  const [servicos, setServicos] = useState([]);
   const [barbeiros, setBarbeiros] = useState([]);
   const [horariosFuncionamento, setHorariosFuncionamento] = useState([]);
 
@@ -180,25 +130,23 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
     const servicoInicial = servicoInicialId
       ? listaServicos.find(servico => servico.id === servicoInicialId)
       : null;
-    const servicoPlano = isAssinante ? encontrarServicoDoPlano(listaServicos, planoCliente) : null;
-
     setFiliais(listaFiliais);
-    setServicos(listaServicos);
     setBarbeiros(listaBarbeiros);
     setHorariosFuncionamento(horarios || []);
     setFilialSelecionada(listaFiliais[0] || null);
     setBarbeiroSelecionado(null);
-    const servicoPadrao = servicoInicial || servicoPlano || null;
+    const servicoPadrao = servicoInicial || null;
     setServicoSelecionado(servicoPadrao);
     setServicoPreSelecionado(Boolean(servicoPadrao));
-    setStep(servicoPadrao ? 2 : 1);
+    setErro(servicoPadrao ? '' : 'Selecione um servico antes de agendar.');
+    setStep(servicoPadrao ? 2 : 0);
     setCarregando(false);
-  }, [empresaId, isAssinante, planoCliente, servicoInicialId]);
+  }, [empresaId, servicoInicialId]);
 
   useEffect(() => {
     if (!isOpen || !empresaId) return;
 
-    setStep(1);
+    setStep(0);
     setErro('');
     setConfirmado(false);
     setServicoSelecionado(null);
@@ -215,10 +163,19 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
     return horariosFuncionamento.find(h => h.filial_id === filialId && h.dia_semana === data.getDay()) || null;
   }, [filialSelecionada, filiais, horariosFuncionamento]);
 
-  const datasDisponiveis = useMemo(() => gerarProximosDias().filter((data) => {
-    const regra = regraFuncionamentoDoDia(data);
-    return regra?.aberto && regra.horario_inicio && regra.horario_fim;
-  }), [regraFuncionamentoDoDia]);
+  const datasDisponiveis = useMemo(() => gerarProximosDias()
+    .filter((data) => {
+      const regra = regraFuncionamentoDoDia(data);
+      if (!regra?.aberto || !regra.horario_inicio || !regra.horario_fim) return false;
+      return gerarHorarios(
+        regra.horario_inicio.substring(0, 5),
+        regra.horario_fim.substring(0, 5),
+        regra.intervalo_inicio?.substring(0, 5),
+        regra.intervalo_fim?.substring(0, 5),
+        data
+      ).some(horario => horarioCabeNoFuncionamento(horario, duracaoServico, regra));
+    })
+    .slice(0, 7), [duracaoServico, regraFuncionamentoDoDia]);
 
   useEffect(() => {
     if (!dataSelecionada) return;
@@ -341,8 +298,10 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
 
   const fechar = () => onClose(confirmado ? { sucesso: true } : null);
   const prevStep = () => {
-    if (step === 1) fechar();
-    else if (step === 2 && servicoPreSelecionado) fechar();
+    if (step <= 1) fechar();
+    else if (step === 2 && servicoPreSelecionado) {
+      onClose(isAssinante ? null : { voltarParaServicos: true });
+    }
     else setStep(s => s - 1);
   };
 
@@ -420,23 +379,18 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
   };
 
   const etapaTitulo = {
+    0: 'Novo agendamento',
     1: 'Novo agendamento',
     2: 'Data e horário',
     3: 'Escolher barbeiro',
     4: 'Confirmar agendamento',
   };
 
-  const escolherServicoAvulso = () => {
-    setServicoSelecionado(null);
-    setServicoPreSelecionado(false);
-    setStep(1);
-  };
-
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex justify-center overflow-y-auto">
-      <div className="client-device min-h-screen">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center overflow-hidden p-3">
+      <div className="w-full max-w-[390px] h-[88vh] max-h-[780px] min-h-[560px] bg-[#050505] border border-[#242424] rounded-[28px] overflow-hidden flex flex-col shadow-2xl">
         {step < 5 && (
-          <div className="back-bar">
+          <div className="back-bar flex-shrink-0">
             <button className="back-btn" onClick={prevStep}>
               <Icon name="arrow" />
             </button>
@@ -445,53 +399,35 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
         )}
 
         {carregando ? (
-          <div className="scroll text-center text-zinc-600 text-xs">Carregando...</div>
+          <div className="scroll flex-1 text-center text-zinc-600 text-xs">Carregando...</div>
         ) : (
-          <>
-            {step === 1 && (
-              <div className="page on">
-                <div className="step-head">
-                  <StepBar step={1} />
-                  <div className="step-title">Qual serviço?</div>
-                  <div className="step-sub">Escolha o que deseja fazer hoje</div>
+          <div className="flex-1 min-h-0 flex flex-col">
+            {step === 0 && (
+              <div className="flex-1 min-h-0 flex flex-col">
+                <div className="step-head flex-shrink-0">
+                  <ClienteAgendamentoStepBar step={1} />
+                  <div className="step-title">Servico necessario</div>
+                  <div className="step-sub">Escolha um servico antes de selecionar data e horario</div>
                 </div>
-                <div className="scroll" style={{ paddingTop: '14px' }}>
-                  {servicos.map(svc => {
-                    const nome = svc.nome.toLowerCase();
-                    const icon = nome.includes('barba') ? 'tool' : nome.includes('&') || nome.includes('combo') ? 'stars' : 'scissors';
-                    return (
-                      <button
-                        key={svc.id}
-                        className={`sopt ${servicoSelecionado?.id === svc.id ? 'sel' : ''}`}
-                        onClick={() => {
-                          setServicoSelecionado(svc);
-                          setServicoPreSelecionado(false);
-                        }}
-                      >
-                        <div className="sopt-ico"><Icon name={icon} /></div>
-                        <div>
-                          <div className="sopt-name">{svc.nome}</div>
-                          <div className="sopt-sub">~{svc.duracao_minutos || 30} min · R$ {Number(svc.preco || 0).toFixed(0)}</div>
-                        </div>
-                        <div className="chk"><Icon name="check" /></div>
-                      </button>
-                    );
-                  })}
-                  <button className="btn primary" onClick={() => setStep(2)} disabled={!servicoSelecionado} style={{ marginTop: '8px' }}>
-                    Próximo
+                <div className="scroll flex-1 min-h-0 overflow-y-auto custom-scrollbar overscroll-contain" style={{ paddingTop: '14px' }}>
+                  <div className="notice" style={{ padding: '18px', color: 'var(--client-s6)', fontSize: '12px', lineHeight: 1.6 }}>
+                    {erro || 'Volte e selecione um servico no painel antes de abrir o agendamento.'}
+                  </div>
+                  <button className="btn primary" onClick={fechar} style={{ marginTop: '8px' }}>
+                    Voltar
                   </button>
                 </div>
               </div>
             )}
 
             {step === 2 && (
-              <div className="page on">
-                <div className="step-head">
-                  <StepBar step={2} />
+              <div className="flex-1 min-h-0 flex flex-col">
+                <div className="step-head flex-shrink-0">
+                  <ClienteAgendamentoStepBar step={2} />
                   <div className="step-title">Quando?</div>
                   <div className="step-sub">Escolha data e horário disponível</div>
                 </div>
-                <div className="scroll" style={{ paddingTop: '14px' }}>
+                <div className="scroll flex-1 min-h-0 overflow-y-auto custom-scrollbar overscroll-contain" style={{ paddingTop: '14px' }}>
                   {isAssinante && servicoSelecionado && (
                     <div className="card">
                       <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mb-2">Servico do plano</p>
@@ -500,9 +436,6 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
                           <p className="text-white font-bold text-sm">{servicoSelecionado.nome}</p>
                           <p className="text-xs text-zinc-500 mt-1">Incluido no {planoCliente?.planoNome || 'plano ativo'} - {duracaoServico} min</p>
                         </div>
-                        <button type="button" className="text-[#d5b451] text-[10px] font-bold uppercase tracking-widest" onClick={escolherServicoAvulso}>
-                          Avulso
-                        </button>
                       </div>
                     </div>
                   )}
@@ -558,14 +491,14 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
             )}
 
             {step === 3 && (
-              <div className="page on">
-                <div className="step-head">
-                  <StepBar step={3} />
+              <div className="flex-1 min-h-0 flex flex-col">
+                <div className="step-head flex-shrink-0">
+                  <ClienteAgendamentoStepBar step={3} />
                   <div className="step-title">Com quem?</div>
                   <div className="step-sub">Ou deixe sem preferência</div>
                 </div>
-                <div className="scroll" style={{ paddingTop: '14px' }}>
-                  {barbeirosDaFilial.map(b => (
+                <div className="scroll flex-1 min-h-0 overflow-y-auto custom-scrollbar overscroll-contain" style={{ paddingTop: '14px' }}>
+                  {barbeirosDaFilial.length > 0 ? barbeirosDaFilial.map(b => (
                     <button
                       key={b.id}
                       className={`bopt ${barbeiroSelecionado?.id === b.id ? 'sel' : ''}`}
@@ -583,7 +516,11 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
                       </div>
                       <div className="chk"><Icon name="check" /></div>
                     </button>
-                  ))}
+                  )) : (
+                    <div className="notice" style={{ padding: '12px', color: 'var(--client-s6)', fontSize: '12px' }}>
+                      Nenhum barbeiro ativo disponivel nesta filial.
+                    </div>
+                  )}
 
                   {barbeirosDaFilial.length > 1 && (
                     <button className={`bopt ${!barbeiroSelecionado ? 'sel' : ''}`} onClick={() => setBarbeiroSelecionado(null)}>
@@ -596,19 +533,19 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
                     </button>
                   )}
 
-                  <button className="btn primary" onClick={() => setStep(4)} style={{ marginTop: '8px' }}>Próximo</button>
+                  <button className="btn primary" onClick={() => setStep(4)} disabled={barbeirosDaFilial.length === 0} style={{ marginTop: '8px' }}>Próximo</button>
                 </div>
               </div>
             )}
 
             {step === 4 && (
-              <div className="page on">
-                <div className="step-head">
-                  <StepBar step={4} />
+              <div className="flex-1 min-h-0 flex flex-col">
+                <div className="step-head flex-shrink-0">
+                  <ClienteAgendamentoStepBar step={4} />
                   <div className="step-title">Tudo certo?</div>
                   <div className="step-sub">Revise antes de confirmar</div>
                 </div>
-                <div className="scroll" style={{ paddingTop: '14px' }}>
+                <div className="scroll flex-1 min-h-0 overflow-y-auto custom-scrollbar overscroll-contain" style={{ paddingTop: '14px' }}>
                   <div className="conf">
                     <div className="crow"><span className="cl">Serviço</span><span className="cv">{servicoSelecionado?.nome || '-'}</span></div>
                     <div className="crow"><span className="cl">Data</span><span className="cv">{dataSelecionada?.toLocaleDateString('pt-BR') || '-'}</span></div>
@@ -626,7 +563,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
             )}
 
             {step === 5 && (
-              <div className="page on">
+              <div className="flex-1 min-h-0 flex flex-col">
                 <div className="success-wrap">
                   <div className="success-ring">
                     <Icon name="check" className="w-8 h-8" />
@@ -640,22 +577,9 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function StepBar({ step }) {
-  return (
-    <div className="step-bar">
-      {[1, 2, 3, 4].map((item, index) => (
-        <span key={item} style={{ display: 'contents' }}>
-          <div className={`sdot ${item < step ? 'done' : item === step ? 'cur' : ''}`}></div>
-          {index < 3 && <div className={`sline ${item < step ? 'done' : ''}`}></div>}
-        </span>
-      ))}
     </div>
   );
 }

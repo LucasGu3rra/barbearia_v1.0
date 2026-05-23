@@ -15,6 +15,7 @@ const criarSlugPlano = (nome) => {
 
 export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
   const [planos, setPlanos] = useState([]);
+  const [servicos, setServicos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [adicionando, setAdicionando] = useState(false);
@@ -23,14 +24,24 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
 
   const buscarPlanos = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('planos')
-      .select('*')
-      .eq('empresa_id', empresaId)
-      .is('deleted_at', null)
-      .order('preco', { ascending: true });
+    const [{ data, error }, { data: dadosServicos, error: erroServicos }] = await Promise.all([
+      supabase
+        .from('planos')
+        .select('*')
+        .eq('empresa_id', empresaId)
+        .is('deleted_at', null)
+        .order('preco', { ascending: true }),
+      supabase
+        .from('servicos')
+        .select('id, nome, preco, duracao_minutos, servico_categorias(nome)')
+        .eq('empresa_id', empresaId)
+        .eq('ativo', true)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true }),
+    ]);
     
     if (!error) setPlanos(data);
+    if (!erroServicos) setServicos(dadosServicos || []);
     setLoading(false);
   }, [empresaId]);
 
@@ -57,6 +68,7 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
         preco: 0,
         limite: 1,
         duracao_minutos: 30,
+        servico_id: null,
         ilimitado: false,
         ativo: true,
       }])
@@ -85,6 +97,7 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
             preco: parseFloat(plano.preco),
             limite: plano.ilimitado ? 0 : parseInt(plano.limite),
             duracao_minutos: parseInt(plano.duracao_minutos) || 30,
+            servico_id: plano.servico_id || null,
             ilimitado: Boolean(plano.ilimitado),
             ativo: Boolean(plano.ativo)
           })
@@ -197,6 +210,22 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
                           onChange={(e) => handleInputChange(plano.id, 'nome', e.target.value)}
                           className="w-full h-8 bg-[#121212] border border-[#27272a] rounded-[10px] px-2.5 text-white text-sm focus:border-[#CEAA6B]/50 outline-none transition-colors"
                         />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-bold text-zinc-500 uppercase ml-1">Servico incluido</label>
+                        <select
+                          value={plano.servico_id || ''}
+                          onChange={(e) => handleInputChange(plano.id, 'servico_id', e.target.value || null)}
+                          className="w-full h-8 bg-[#121212] border border-[#27272a] rounded-[10px] px-2.5 text-white text-xs font-bold focus:border-[#CEAA6B]/50 outline-none transition-colors"
+                        >
+                          <option value="">Selecione o servico</option>
+                          {servicos.map((servico) => (
+                            <option key={servico.id} value={servico.id}>
+                              {servico.nome} - {servico.duracao_minutos || 30} min - R$ {Number(servico.preco || 0).toFixed(0)}
+                            </option>
+                          ))}
+                        </select>
                       </div>
 
                       <div className="grid grid-cols-3 gap-2">
