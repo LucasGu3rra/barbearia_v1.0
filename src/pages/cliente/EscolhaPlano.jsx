@@ -307,7 +307,7 @@ export default function EscolhaPlano() {
                 </div>
               </div>
 
-              <button className="btn ghost" onClick={() => confirmarContratacao(false)}>Fazer depois</button>
+              <button className="btn ghost" onClick={() => setModalAberto(false)}>Fazer depois</button>
             </div>
           </div>
         </div>

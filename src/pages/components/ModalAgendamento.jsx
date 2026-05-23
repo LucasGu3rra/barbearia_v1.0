@@ -64,14 +64,44 @@ const encontrarServicoDoPlano = (servicos, planoCliente) => {
   if (!planoCliente) return null;
   const planoSlug = normalizarTexto(planoCliente.planoId);
   const planoNome = normalizarTexto(planoCliente.planoNome);
+  const planoTexto = `${planoSlug} ${planoNome}`;
+  const planoTemBarba = planoTexto.includes('barba') || planoTexto.includes('completo');
+  const planoTemCabelo = planoTexto.includes('cabelo') || planoTexto.includes('corte') || planoTexto.includes('completo');
 
-  return servicos.find((servico) => {
-    const nome = normalizarTexto(servico.nome);
-    if (planoSlug === 'completo') return nome.includes('cabelo') && nome.includes('barba');
-    if (planoSlug === 'cabelo') return nome.includes('cabelo') && !nome.includes('barba');
-    if (planoSlug === 'barba') return nome.includes('barba') && !nome.includes('cabelo');
-    return nome === planoNome || nome.includes(planoSlug);
-  }) || null;
+  const servicosComTexto = servicos.map((servico) => {
+    const texto = normalizarTexto([
+      servico.nome,
+      servico.servico_categorias?.nome,
+      servico.servico_subcategorias?.nome,
+    ].filter(Boolean).join(' '));
+
+    return {
+      servico,
+      texto,
+      temBarba: texto.includes('barba'),
+      temCabelo: texto.includes('cabelo') || texto.includes('corte') || texto.includes('degrade') || texto.includes('tesoura'),
+    };
+  });
+
+  const exato = servicosComTexto.find(({ texto }) => texto === planoNome || texto.includes(planoSlug) || texto.includes(planoNome));
+  if (exato) return exato.servico;
+
+  if (planoTemCabelo && planoTemBarba) {
+    const servicoCombo = servicosComTexto.find(({ temCabelo, temBarba }) => temCabelo && temBarba);
+    if (servicoCombo) return servicoCombo.servico;
+  }
+
+  if (planoTemBarba) {
+    const servicoBarba = servicosComTexto.find(({ temBarba, temCabelo }) => temBarba && !temCabelo);
+    if (servicoBarba) return servicoBarba.servico;
+  }
+
+  if (planoTemCabelo) {
+    const servicoCabelo = servicosComTexto.find(({ temCabelo, temBarba }) => temCabelo && !temBarba);
+    if (servicoCabelo) return servicoCabelo.servico;
+  }
+
+  return servicosComTexto.find(({ temCabelo, temBarba }) => temCabelo || temBarba)?.servico || servicos[0] || null;
 };
 
 const gerarHorarios = (inicio = '08:00', fim = '19:00', pausaInicio = null, pausaFim = null, data = null) => {
@@ -118,6 +148,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
   const [confirmado, setConfirmado] = useState(false);
+  const [servicoPreSelecionado, setServicoPreSelecionado] = useState(false);
 
   const [filiais, setFiliais] = useState([]);
   const [servicos, setServicos] = useState([]);
@@ -132,7 +163,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
   const [agendamentosOcupados, setAgendamentosOcupados] = useState([]);
 
   const isAssinante = tipoCliente === 'assinante';
-  const duracaoServico = Number(servicoSelecionado?.duracao_minutos || 30);
+  const duracaoServico = Number((isAssinante && planoCliente?.duracaoMinutos) || servicoSelecionado?.duracao_minutos || 30);
 
   const carregarDados = useCallback(async () => {
     setCarregando(true);
@@ -157,8 +188,10 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
     setHorariosFuncionamento(horarios || []);
     setFilialSelecionada(listaFiliais[0] || null);
     setBarbeiroSelecionado(null);
-    setServicoSelecionado(servicoInicial || servicoPlano || null);
-    setStep(servicoInicial || servicoPlano ? 2 : 1);
+    const servicoPadrao = servicoInicial || servicoPlano || null;
+    setServicoSelecionado(servicoPadrao);
+    setServicoPreSelecionado(Boolean(servicoPadrao));
+    setStep(servicoPadrao ? 2 : 1);
     setCarregando(false);
   }, [empresaId, isAssinante, planoCliente, servicoInicialId]);
 
@@ -169,6 +202,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
     setErro('');
     setConfirmado(false);
     setServicoSelecionado(null);
+    setServicoPreSelecionado(false);
     setDataSelecionada(null);
     setHorarioSelecionado(null);
     setBarbeiroSelecionado(null);
@@ -308,6 +342,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
   const fechar = () => onClose(confirmado ? { sucesso: true } : null);
   const prevStep = () => {
     if (step === 1) fechar();
+    else if (step === 2 && servicoPreSelecionado) fechar();
     else setStep(s => s - 1);
   };
 
@@ -365,6 +400,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
         barbeiro_id: barbeiroId,
         data_hora: dataHora.toISOString(),
         tipo_cliente: tipoCliente,
+        duracao_minutos: duracaoServico,
         status: 'agendado',
       }]);
 
@@ -392,6 +428,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
 
   const escolherServicoAvulso = () => {
     setServicoSelecionado(null);
+    setServicoPreSelecionado(false);
     setStep(1);
   };
 
@@ -426,7 +463,10 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
                       <button
                         key={svc.id}
                         className={`sopt ${servicoSelecionado?.id === svc.id ? 'sel' : ''}`}
-                        onClick={() => setServicoSelecionado(svc)}
+                        onClick={() => {
+                          setServicoSelecionado(svc);
+                          setServicoPreSelecionado(false);
+                        }}
                       >
                         <div className="sopt-ico"><Icon name={icon} /></div>
                         <div>
@@ -458,7 +498,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-white font-bold text-sm">{servicoSelecionado.nome}</p>
-                          <p className="text-xs text-zinc-500 mt-1">Incluido no {planoCliente?.planoNome || 'plano ativo'}</p>
+                          <p className="text-xs text-zinc-500 mt-1">Incluido no {planoCliente?.planoNome || 'plano ativo'} - {duracaoServico} min</p>
                         </div>
                         <button type="button" className="text-[#d5b451] text-[10px] font-bold uppercase tracking-widest" onClick={escolherServicoAvulso}>
                           Avulso

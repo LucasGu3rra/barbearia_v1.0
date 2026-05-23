@@ -8,8 +8,7 @@ import { useAuth } from '../../contexts/useAuth';
 import DrawerClientes from './DrawerClientes';
 import { limparSessaoPreservandoEmpresa, montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
 import ClienteDashboardAvulso from './ClienteDashboardAvulso';
-import ClienteDashboardPendente from './ClienteDashboardPendente';
-import ClienteDashboardAtivo from './ClienteDashboardAtivo';
+import ClienteDashboardPlano from './ClienteDashboardPlano';
 import { parseDataSupabase } from './clienteDashboardUtils';
 
 const getClienteId = (userId) => {
@@ -87,12 +86,11 @@ export default function ClienteDashboard() {
   const [historicoMes, setHistoricoMes] = useState([]);
   const [menuAberto, setMenuAberto] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [salvandoCorte, setSalvandoCorte] = useState(false);
-  const [corteCancelavel, setCorteCancelavel] = useState(null);
   const [tipoCliente, setTipoCliente] = useState(null);
   const [agendamentoAtivo, setAgendamentoAtivo] = useState(false);
   const [modalAgendamentoAberto, setModalAgendamentoAberto] = useState(false);
   const [servicoAgendamentoInicial, setServicoAgendamentoInicial] = useState(null);
+  const [modoAgendamento, setModoAgendamento] = useState('avulso');
   const [servicosAvulsos, setServicosAvulsos] = useState([]);
   const [agendamentos, setAgendamentos] = useState([]);
   const [historicoCompleto, setHistoricoCompleto] = useState([]);
@@ -101,7 +99,6 @@ export default function ClienteDashboard() {
   const [mapaPlanos, setMapaPlanos] = useState({});
   const [modalCheckoutAberto, setModalCheckoutAberto] = useState(false);
   const [metodoPagamento] = useState('pix');
-  const [pagamentoIniciado, setPagamentoIniciado] = useState(false);
   const [pixCopiado, setPixCopiado] = useState(false);
   const [editandoNome, setEditandoNome] = useState(false);
   const [novoNome, setNovoNome] = useState('');
@@ -115,24 +112,6 @@ export default function ClienteDashboard() {
   const [configModalAlerta, setConfigModalAlerta] = useState({
     isOpen: false, type: 'alert', title: '', message: '', onConfirm: null,
   });
-
-  useEffect(() => {
-    if (tipoCliente !== 'ativo') return;
-
-    const verificar = () => {
-      if (historicoMes.length > 0) {
-        const ultimo = historicoMes[0];
-        const diff = (new Date().getTime() - parseDataSupabase(ultimo.created_at).getTime()) / 60000;
-        setCorteCancelavel(diff >= 0 && diff <= 15 ? ultimo : null);
-      } else {
-        setCorteCancelavel(null);
-      }
-    };
-
-    verificar();
-    const interval = setInterval(verificar, 5000);
-    return () => clearInterval(interval);
-  }, [historicoMes, tipoCliente]);
 
   const carregarDados = useCallback(async (id) => {
     try {
@@ -192,11 +171,8 @@ export default function ClienteDashboard() {
       const planoInfo = temPlano ? mapa[ass.plano_escolhido] : null;
       const ilimitado = Boolean(planoInfo?.ilimitado);
       const limite = ilimitado ? 0 : planoInfo?.limite || 5;
-      const chavePagamento = `pagamento_plano_${empresaId}_${id}_${ass?.plano_escolhido || 'sem-plano'}`;
-
       setHistoricoMes(tipo === 'ativo' ? cortesDoMes : []);
       setHistoricoCompleto(todosCortes);
-      setPagamentoIniciado(statusAss === 'pendente' && localStorage.getItem(chavePagamento) === 'iniciado');
       const dataCadastro = parseDataSupabase(vinculoEmpresa?.created_at);
       setDados({
         nome: cli.nome,
@@ -213,6 +189,7 @@ export default function ClienteDashboard() {
           : '--/--',
         planoId: ass?.plano_escolhido || null,
         planoNome: planoInfo?.nome || 'Plano',
+        duracaoMinutos: Number(planoInfo?.duracao_minutos || 30),
         precoPlano: planoInfo?.preco || 0,
         proximoPlano: ass?.proximo_plano,
         upgradePendente: ass?.upgrade_pendente,
@@ -302,7 +279,6 @@ export default function ClienteDashboard() {
     }
     if (!isUpgrade) {
       localStorage.setItem(`pagamento_plano_${empresaId}_${clienteIdAtual()}_${dados.planoId || 'sem-plano'}`, 'iniciado');
-      setPagamentoIniciado(true);
     }
     window.open(`https://wa.me/${WHATSAPP_JOAO}?text=${encodeURIComponent(mensagem)}`, '_blank');
     setModalCheckoutAberto(false);
@@ -316,46 +292,9 @@ export default function ClienteDashboard() {
     setEditandoNome(false);
   };
 
-  const handleConfirmarCorte = () => {
-    if (!dados.ilimitado && dados.cortesRestantes <= 0) return exibirAlerta('Limite Atingido', 'Cortes esgotados este mês.');
-    if (historicoMes.length > 0) {
-      const dataUltimo = parseDataSupabase(historicoMes[0].created_at).toLocaleDateString('pt-BR');
-      if (dataUltimo === new Date().toLocaleDateString('pt-BR')) return exibirAlerta('Atenção', 'Você já registrou um corte hoje. Retorne amanhã.');
-    }
-    exibirConfirmacao('Confirmar Serviço', `Deseja registrar "${dados.planoNome}" agora?\n\nVocê poderá cancelar em até 15 minutos.`, efetuarCorteNoBanco);
-  };
-
-  const efetuarCorteNoBanco = async () => {
-    if (salvandoCorte) return;
-    setSalvandoCorte(true);
-    try {
-      await supabase.from('historico_cortes').insert([{ cliente_id: clienteIdAtual(), empresa_id: empresaId, tipo_corte: dados.planoNome }]);
-      fecharModalAlerta();
-      navigate(montarRotaEmpresa(slugEmpresa, '/confirmado'));
-    } catch {
-      fecharModalAlerta();
-      setSalvandoCorte(false);
-    }
-  };
-
-  const handleCancelarCorte = () => {
-    exibirConfirmacao('Cancelar Corte', 'Tem certeza? O limite de corte será devolvido.', async () => {
-      if (salvandoCorte) return;
-      setSalvandoCorte(true);
-      fecharModalAlerta();
-      const { error } = await supabase.from('historico_cortes').delete().eq('empresa_id', empresaId).eq('id', corteCancelavel.id);
-      if (!error) {
-        await carregarDados(clienteIdAtual());
-        exibirAlerta('Cancelado', 'Seu corte foi cancelado e o limite retornou.');
-      } else {
-        exibirAlerta('Erro', 'Não foi possível cancelar. O prazo de 15 minutos pode ter expirado.');
-      }
-      setSalvandoCorte(false);
-    });
-  };
-
   const handleFechamentoAgendamento = (resultado) => {
     setModalAgendamentoAberto(false);
+    setModoAgendamento(tipoCliente === 'ativo' ? 'plano' : 'avulso');
     setServicoAgendamentoInicial(null);
     if (resultado?.sucesso) {
       exibirAlerta('Agendado!', 'Seu agendamento foi confirmado. Te esperamos na barbearia.');
@@ -375,6 +314,7 @@ export default function ClienteDashboard() {
       exibirAlerta('Agendamento Indisponível', 'No momento esta barbearia não está aceitando agendamento online.');
       return;
     }
+    setModoAgendamento(tipoCliente === 'ativo' ? 'plano' : 'avulso');
     setServicoAgendamentoInicial(null);
     setModalAgendamentoAberto(true);
   };
@@ -398,9 +338,9 @@ export default function ClienteDashboard() {
           onClose={handleFechamentoAgendamento}
           clienteId={clienteIdAtual()}
           clienteNome={dados?.nome}
-          tipoCliente={tipoCliente === 'ativo' ? 'assinante' : 'avulso'}
+          tipoCliente={modoAgendamento === 'plano' ? 'assinante' : 'avulso'}
           empresaId={empresaId}
-          planoCliente={tipoCliente === 'ativo' ? dados : null}
+          planoCliente={modoAgendamento === 'plano' ? dados : null}
           servicoInicialId={servicoAgendamentoInicial}
         />
       )}
@@ -582,6 +522,7 @@ export default function ClienteDashboard() {
       exibirAlerta('Agendamento indisponível', 'No momento esta barbearia não está aceitando agendamento online para clientes sem plano ativo.');
       return;
     }
+    setModoAgendamento('avulso');
     setServicoAgendamentoInicial(servicoId);
     setModalAgendamentoAberto(true);
   };
@@ -591,9 +532,45 @@ export default function ClienteDashboard() {
       exibirAlerta('Agendamento indisponível', 'No momento esta barbearia não está aceitando agendamento online.');
       return;
     }
+    setModoAgendamento('avulso');
     setServicoAgendamentoInicial(servicoId);
     setModalAgendamentoAberto(true);
   };
+
+  const abrirAgendamentoComPlano = () => {
+    if (tipoCliente !== 'ativo') {
+      exibirAlerta('Plano pendente', 'Seu plano precisa ser ativado para agendar usando os beneficios do plano.');
+      return;
+    }
+
+    if (!agendamentoAtivo) {
+      exibirAlerta('Agendamento indisponivel', 'No momento esta barbearia nao esta aceitando agendamento online.');
+      return;
+    }
+
+    setModoAgendamento('plano');
+    setServicoAgendamentoInicial(null);
+    setModalAgendamentoAberto(true);
+  };
+
+  const pedidoRecente = (() => {
+    const pedidos = [
+      ...historicoCompleto.map((corte) => ({
+        tipo: 'feito',
+        nome: corte.tipo_corte,
+        data: corte.created_at,
+        status: 'feito',
+      })),
+      ...agendamentos.map((agendamento) => ({
+        tipo: 'agendamento',
+        nome: agendamento.servicos?.nome || 'Servico',
+        data: agendamento.data_hora || agendamento.created_at,
+        status: agendamento.status || 'agendado',
+      })),
+    ];
+
+    return pedidos.sort((a, b) => parseDataSupabase(b.data) - parseDataSupabase(a.data))[0] || null;
+  })();
 
   const renderDashboardPorTipo = () => {
     if (tipoCliente === 'avulso') {
@@ -608,33 +585,15 @@ export default function ClienteDashboard() {
       );
     }
 
-    if (tipoCliente === 'pendente') {
-      return (
-        <ClienteDashboardPendente
-          dados={dados}
-          onEnviarComprovante={abrirWhatsappPagamento}
-          onTrocarPlano={abrirPlanos}
-          onVerChavePix={abrirCheckoutPlano}
-          onAgendarAvulso={abrirAgendamentoAvulsoPendente}
-          pagamentoIniciado={pagamentoIniciado}
-          agendamentos={agendamentos}
-        />
-      );
-    }
-
     return (
-      <ClienteDashboardAtivo
+      <ClienteDashboardPlano
         dados={dados}
+        statusPlano={tipoCliente}
         historicoMes={historicoMes}
-        corteCancelavel={corteCancelavel}
-        salvandoCorte={salvandoCorte}
+        pedidoRecente={pedidoRecente}
         agendamentoAtivo={agendamentoAtivo}
-        onCancelarCorte={handleCancelarCorte}
-        onAbrirAgendamento={() => {
-          setServicoAgendamentoInicial(null);
-          setModalAgendamentoAberto(true);
-        }}
-        onConfirmarCorte={handleConfirmarCorte}
+        onAbrirAgendamentoPlano={abrirAgendamentoComPlano}
+        onAbrirOutroServico={abrirAgendamentoAvulsoPendente}
       />
     );
   };
