@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../services/supabase';
-import { getEmpresaPorSlug } from '../services/empresa';
+import { getEmpresaPorSlug, limparSessaoPreservandoEmpresa, salvarUltimaEmpresaSlug } from '../services/empresa';
 import { AuthContext } from './AuthContextObject';
 
 export const AuthProvider = ({ children }) => {
@@ -25,6 +25,8 @@ export const AuthProvider = ({ children }) => {
       setIsAdmin(false);
       return { empresa: null, papel: null, isAdmin: false };
     }
+
+    salvarUltimaEmpresaSlug(empresa.slug);
 
     if (!user?.id) {
       setEmpresaAtual(empresa);
@@ -94,8 +96,7 @@ export const AuthProvider = ({ children }) => {
       if (!isMounted) return;
 
       if (event === 'SIGNED_OUT') {
-        localStorage.clear();
-        sessionStorage.clear();
+        limparSessaoPreservandoEmpresa();
       }
 
       setLoading(true);

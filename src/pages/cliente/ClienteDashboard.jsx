@@ -6,7 +6,7 @@ import ModalAlerta from '../components/ModalAlerta';
 import ModalAgendamento from '../components/ModalAgendamento';
 import { useAuth } from '../../contexts/useAuth';
 import DrawerClientes from './DrawerClientes';
-import { montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
+import { limparSessaoPreservandoEmpresa, montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
 import ClienteDashboardAvulso from './ClienteDashboardAvulso';
 import ClienteDashboardPendente from './ClienteDashboardPendente';
 import ClienteDashboardAtivo from './ClienteDashboardAtivo';
@@ -228,13 +228,13 @@ export default function ClienteDashboard() {
     if (authLoading) return;
     if (!empresaId) return;
     if (!empresaSlug || empresaAtual?.slug !== empresaSlug) {
-      navigate('/');
+      navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
       return;
     }
 
     const clienteId = clienteIdAtual();
     if (!clienteId) {
-      navigate('/');
+      navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
       return;
     }
     carregarDados(clienteId);
@@ -385,9 +385,8 @@ export default function ClienteDashboard() {
   };
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.clear();
-    sessionStorage.clear();
-    navigate('/');
+    limparSessaoPreservandoEmpresa();
+    navigate(montarRotaEmpresa(slugEmpresa, ''));
   };
 
   const modalBase = (

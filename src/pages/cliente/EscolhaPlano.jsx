@@ -47,13 +47,13 @@ export default function EscolhaPlano() {
     const buscarDados = async () => {
       try {
         if (empresaAtual && empresaSlug && empresaAtual.slug !== empresaSlug) {
-          navigate('/');
+          navigate(montarRotaEmpresa(empresaSlug, ''));
           return;
         }
 
         const empresaBase = empresaAtual || await getEmpresaPorSlug(empresaSlug);
         if (!empresaBase) {
-          navigate('/');
+          navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
           return;
         }
 

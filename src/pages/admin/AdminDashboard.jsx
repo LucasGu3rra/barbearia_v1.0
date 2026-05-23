@@ -13,6 +13,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '../../contexts/useAuth';
+import { limparSessaoPreservandoEmpresa, montarRotaEmpresa } from '../../services/empresa';
 
 const CustomDateInput = forwardRef(({ value, onClick }, ref) => (
   <button
@@ -151,7 +152,7 @@ export default function AdminDashboard() {
 
     const checarAdminReal = async () => {
       if (!isAdmin || !empresaId || !empresaSlug || empresaAtual?.slug !== empresaSlug) {
-        return navigate('/');
+        return navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
       }
 
       if (isMounted) carregarDados();
@@ -181,9 +182,8 @@ export default function AdminDashboard() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.clear();
-    sessionStorage.clear();
-    navigate('/');
+    limparSessaoPreservandoEmpresa();
+    navigate(montarRotaEmpresa(empresaSlug, ''));
   };
 
   const confirmarAtivacao = (assinaturaId, nomeCliente) => {
