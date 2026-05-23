@@ -17,6 +17,43 @@ const gerarProximosDias = () => {
 
 const mesmaData = (a, b) => a && b && a.toDateString() === b.toDateString();
 
+const horarioParaMinutos = (horario) => {
+  const [h, m] = horario.split(':').map(Number);
+  return h * 60 + m;
+};
+
+const criarDataHora = (data, horario) => {
+  const [h, m] = horario.split(':');
+  const dataHora = new Date(data);
+  dataHora.setHours(Number(h), Number(m), 0, 0);
+  return dataHora;
+};
+
+const intervalosSobrepoem = (inicioA, duracaoA, inicioB, duracaoB) => {
+  const fimA = new Date(inicioA.getTime() + duracaoA * 60000);
+  const fimB = new Date(inicioB.getTime() + duracaoB * 60000);
+  return inicioA < fimB && inicioB < fimA;
+};
+
+const horarioCabeNoFuncionamento = (horario, duracao, regra) => {
+  if (!regra?.horario_inicio || !regra?.horario_fim) return false;
+
+  const inicioMin = horarioParaMinutos(horario);
+  const fimMin = inicioMin + duracao;
+  const aberturaMin = horarioParaMinutos(regra.horario_inicio.substring(0, 5));
+  const fechamentoMin = horarioParaMinutos(regra.horario_fim.substring(0, 5));
+
+  if (inicioMin < aberturaMin || fimMin > fechamentoMin) return false;
+
+  if (regra.intervalo_inicio && regra.intervalo_fim) {
+    const pausaInicioMin = horarioParaMinutos(regra.intervalo_inicio.substring(0, 5));
+    const pausaFimMin = horarioParaMinutos(regra.intervalo_fim.substring(0, 5));
+    if (inicioMin < pausaFimMin && fimMin > pausaInicioMin) return false;
+  }
+
+  return true;
+};
+
 const normalizarTexto = (valor = '') => String(valor)
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -92,9 +129,10 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
   const [dataSelecionada, setDataSelecionada] = useState(null);
   const [horarioSelecionado, setHorarioSelecionado] = useState(null);
   const [barbeiroSelecionado, setBarbeiroSelecionado] = useState(null);
-  const [horariosIndisponiveis, setHorariosIndisponiveis] = useState(new Set());
+  const [agendamentosOcupados, setAgendamentosOcupados] = useState([]);
 
   const isAssinante = tipoCliente === 'assinante';
+  const duracaoServico = Number(servicoSelecionado?.duracao_minutos || 30);
 
   const carregarDados = useCallback(async () => {
     setCarregando(true);
@@ -168,8 +206,8 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
       regra.intervalo_inicio?.substring(0, 5),
       regra.intervalo_fim?.substring(0, 5),
       dataSelecionada
-    );
-  }, [dataSelecionada, regraFuncionamentoDoDia]);
+    ).filter(horario => horarioCabeNoFuncionamento(horario, duracaoServico, regra));
+  }, [dataSelecionada, duracaoServico, regraFuncionamentoDoDia]);
 
   const barbeirosDaFilial = useMemo(() => {
     if (!filialSelecionada?.id) return barbeiros;
@@ -178,7 +216,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
 
   useEffect(() => {
     if (!isOpen || !empresaId || !filialSelecionada?.id || !dataSelecionada) {
-      setHorariosIndisponiveis(new Set());
+      setAgendamentosOcupados([]);
       return;
     }
 
@@ -190,40 +228,22 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
       const fimDia = new Date(dataSelecionada);
       fimDia.setHours(23, 59, 59, 999);
 
-      const { data, error } = await supabase
-        .from('agendamentos')
-        .select('data_hora')
-        .eq('empresa_id', empresaId)
-        .eq('filial_id', filialSelecionada.id)
-        .gte('data_hora', inicioDia.toISOString())
-        .lte('data_hora', fimDia.toISOString())
-        .neq('status', 'cancelado');
+      const { data, error } = await supabase.rpc('agendamentos_ocupados_dia', {
+        p_empresa_id: empresaId,
+        p_filial_id: filialSelecionada.id,
+        p_inicio: inicioDia.toISOString(),
+        p_fim: fimDia.toISOString(),
+      });
 
       if (cancelado) return;
 
       if (error) {
         console.error(error);
-        setHorariosIndisponiveis(new Set());
+        setAgendamentosOcupados([]);
         return;
       }
 
-      const totalPorHorario = new Map();
-      (data || []).forEach((agendamento) => {
-        const dataHora = new Date(agendamento.data_hora);
-        const hora = `${String(dataHora.getHours()).padStart(2, '0')}:${String(dataHora.getMinutes()).padStart(2, '0')}`;
-        totalPorHorario.set(hora, (totalPorHorario.get(hora) || 0) + 1);
-      });
-
-      const capacidade = Math.max(barbeirosDaFilial.length, 1);
-      const indisponiveis = new Set();
-      totalPorHorario.forEach((total, hora) => {
-        if (total >= capacidade) indisponiveis.add(hora);
-      });
-
-      setHorariosIndisponiveis(indisponiveis);
-      if (horarioSelecionado && indisponiveis.has(horarioSelecionado)) {
-        setHorarioSelecionado(null);
-      }
+      setAgendamentosOcupados(data || []);
     };
 
     carregarHorariosOcupados();
@@ -231,7 +251,50 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
     return () => {
       cancelado = true;
     };
-  }, [barbeirosDaFilial.length, dataSelecionada, empresaId, filialSelecionada, horarioSelecionado, isOpen]);
+  }, [dataSelecionada, empresaId, filialSelecionada, isOpen]);
+
+  const barbeiroDisponivelNoHorario = useCallback((barbeiroId, dataHora, duracao) => {
+    return !agendamentosOcupados.some((agendamento) => {
+      if (agendamento.barbeiro_id !== barbeiroId) return false;
+      return intervalosSobrepoem(
+        new Date(agendamento.data_hora),
+        Number(agendamento.duracao_minutos || 30),
+        dataHora,
+        duracao
+      );
+    });
+  }, [agendamentosOcupados]);
+
+  const horariosIndisponiveis = useMemo(() => {
+    if (!dataSelecionada || !servicoSelecionado) return new Set();
+
+    const indisponiveis = new Set();
+
+    horariosDoDia.forEach((horario) => {
+      const dataHora = criarDataHora(dataSelecionada, horario);
+
+      if (barbeiroSelecionado?.id) {
+        if (!barbeiroDisponivelNoHorario(barbeiroSelecionado.id, dataHora, duracaoServico)) {
+          indisponiveis.add(horario);
+        }
+        return;
+      }
+
+      const algumBarbeiroLivre = barbeirosDaFilial.some((barbeiro) =>
+        barbeiroDisponivelNoHorario(barbeiro.id, dataHora, duracaoServico)
+      );
+
+      if (!algumBarbeiroLivre) indisponiveis.add(horario);
+    });
+
+    return indisponiveis;
+  }, [barbeiroDisponivelNoHorario, barbeiroSelecionado, barbeirosDaFilial, dataSelecionada, duracaoServico, horariosDoDia, servicoSelecionado]);
+
+  useEffect(() => {
+    if (horarioSelecionado && horariosIndisponiveis.has(horarioSelecionado)) {
+      setHorarioSelecionado(null);
+    }
+  }, [horarioSelecionado, horariosIndisponiveis]);
 
   useEffect(() => {
     if (!isOpen || step !== 3) return;
@@ -249,63 +312,25 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
   };
 
   const verificarConflitoAgendamento = async (dataHora) => {
-    const dataHoraIso = dataHora.toISOString();
-
-    const { data: agendamentoCliente, error: erroCliente } = await supabase
-      .from('agendamentos')
-      .select('id')
-      .eq('empresa_id', empresaId)
-      .eq('cliente_id', clienteId)
-      .eq('data_hora', dataHoraIso)
-      .neq('status', 'cancelado')
-      .limit(1);
-
-    if (erroCliente) throw erroCliente;
-    if (agendamentoCliente?.length) {
-      throw new Error('Voce ja tem um agendamento nesse horario.');
-    }
-
-    let query = supabase
-      .from('agendamentos')
-      .select('id', { count: 'exact' })
-      .eq('empresa_id', empresaId)
-      .eq('filial_id', filialSelecionada.id)
-      .eq('data_hora', dataHoraIso)
-      .neq('status', 'cancelado');
-
-    if (barbeiroSelecionado?.id) {
-      query = query.eq('barbeiro_id', barbeiroSelecionado.id).limit(1);
-    }
-
-    const { data, count, error } = await query;
-    if (error) throw error;
-
-    if (barbeiroSelecionado?.id && data?.length) {
+    if (barbeiroSelecionado?.id && !barbeiroDisponivelNoHorario(barbeiroSelecionado.id, dataHora, duracaoServico)) {
       throw new Error('Esse barbeiro ja possui agendamento neste horario.');
     }
 
-    const capacidade = Math.max(barbeirosDaFilial.length, 1);
-    if (!barbeiroSelecionado?.id && Number(count || 0) >= capacidade) {
-      throw new Error('Esse horario nao esta mais disponivel.');
+    if (!barbeiroSelecionado?.id) {
+      const algumBarbeiroLivre = barbeirosDaFilial.some((barbeiro) =>
+        barbeiroDisponivelNoHorario(barbeiro.id, dataHora, duracaoServico)
+      );
+
+      if (!algumBarbeiroLivre) throw new Error('Esse horario nao esta mais disponivel.');
     }
   };
 
   const obterBarbeiroDisponivel = async (dataHora) => {
     if (barbeiroSelecionado?.id) return barbeiroSelecionado.id;
 
-    const { data: ocupados, error } = await supabase
-      .from('agendamentos')
-      .select('barbeiro_id')
-      .eq('empresa_id', empresaId)
-      .eq('filial_id', filialSelecionada.id)
-      .eq('data_hora', dataHora.toISOString())
-      .neq('status', 'cancelado')
-      .not('barbeiro_id', 'is', null);
-
-    if (error) throw error;
-
-    const barbeirosOcupados = new Set((ocupados || []).map(item => item.barbeiro_id));
-    const barbeiroLivre = barbeirosDaFilial.find(barbeiro => !barbeirosOcupados.has(barbeiro.id));
+    const barbeiroLivre = barbeirosDaFilial.find((barbeiro) =>
+      barbeiroDisponivelNoHorario(barbeiro.id, dataHora, duracaoServico)
+    );
 
     if (!barbeiroLivre) {
       throw new Error('Esse horario nao esta mais disponivel.');
@@ -327,9 +352,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
         throw new Error('Selecione serviço, data e horário.');
       }
 
-      const [h, m] = horarioSelecionado.split(':');
-      const dataHora = new Date(dataSelecionada);
-      dataHora.setHours(Number(h), Number(m), 0, 0);
+      const dataHora = criarDataHora(dataSelecionada, horarioSelecionado);
 
       await verificarConflitoAgendamento(dataHora);
       const barbeiroId = await obterBarbeiroDisponivel(dataHora);
@@ -503,11 +526,20 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
                 </div>
                 <div className="scroll" style={{ paddingTop: '14px' }}>
                   {barbeirosDaFilial.map(b => (
-                    <button key={b.id} className={`bopt ${barbeiroSelecionado?.id === b.id ? 'sel' : ''}`} onClick={() => setBarbeiroSelecionado(b)}>
+                    <button
+                      key={b.id}
+                      className={`bopt ${barbeiroSelecionado?.id === b.id ? 'sel' : ''}`}
+                      disabled={dataSelecionada && horarioSelecionado && !barbeiroDisponivelNoHorario(b.id, criarDataHora(dataSelecionada, horarioSelecionado), duracaoServico)}
+                      onClick={() => setBarbeiroSelecionado(b)}
+                    >
                       <div className="bav">{b.nome.substring(0, 2).toUpperCase()}</div>
                       <div>
                         <div className="bname">{b.nome}</div>
-                        <div className="brole">Barbeiro</div>
+                        <div className="brole">
+                          {dataSelecionada && horarioSelecionado && !barbeiroDisponivelNoHorario(b.id, criarDataHora(dataSelecionada, horarioSelecionado), duracaoServico)
+                            ? 'Indisponivel nesse horario'
+                            : 'Barbeiro'}
+                        </div>
                       </div>
                       <div className="chk"><Icon name="check" /></div>
                     </button>
