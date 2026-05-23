@@ -384,7 +384,9 @@ export default function ModalServicos({ isOpen, onClose, onRefresh, empresaId })
                   >
                   {listaVazia && (
                     <div className="text-center py-6 border border-dashed border-[#27272a] rounded-2xl">
-                      <p className="text-zinc-600 text-xs italic">Nenhum serviço cadastrado.</p>
+                      <p className="text-zinc-600 text-xs leading-relaxed">
+                        Nenhum servico ou categoria ativa ainda. Use os botoes abaixo para adicionar um avulso ou criar uma categoria.
+                      </p>
                     </div>
                   )}
 
