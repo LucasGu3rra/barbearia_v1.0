@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/useAuth';
 import { ProtectedRoute } from './pages/components/ProtectedRoute';
-import { montarRotaEmpresa } from './services/empresa';
+import { limparSessaoPreservandoEmpresa, montarRotaEmpresa, obterUltimaEmpresaSlug, salvarUltimaEmpresaSlug } from './services/empresa';
 import { supabase } from './services/supabase';
 
 import ClienteLogin from './pages/cliente/ClienteLogin';
@@ -28,6 +28,12 @@ const AcessoPorLink = () => (
   </div>
 );
 
+const RootRoute = () => {
+  const ultimaEmpresaSlug = obterUltimaEmpresaSlug();
+  if (ultimaEmpresaSlug) return <Navigate to={montarRotaEmpresa(ultimaEmpresaSlug, '')} replace />;
+  return <AcessoPorLink />;
+};
+
 const EmpresaAtivaRoute = ({ children }) => {
   const { empresaSlug } = useParams();
   const { user, selecionarEmpresaPorSlug } = useAuth();
@@ -49,11 +55,11 @@ const EmpresaAtivaRoute = ({ children }) => {
 
         const empresaExiste = Boolean(resultado.empresa);
         setSlugValido(empresaExiste);
+        if (empresaExiste) salvarUltimaEmpresaSlug(resultado.empresa.slug);
 
         if (empresaExiste && user && !resultado.papel) {
           setLimpandoSessao(true);
-          localStorage.clear();
-          sessionStorage.clear();
+          limparSessaoPreservandoEmpresa();
           await supabase.auth.signOut();
           if (ativo) setLimpandoSessao(false);
         }
@@ -98,11 +104,11 @@ const InitialRoute = () => {
         const empresaExiste = Boolean(resultado.empresa);
         setSlugValido(empresaExiste);
         setUsuarioComAcesso(Boolean(user && resultado.papel));
+        if (empresaExiste) salvarUltimaEmpresaSlug(resultado.empresa.slug);
 
         if (empresaExiste && user && !resultado.papel) {
           setLimpandoSessao(true);
-          localStorage.clear();
-          sessionStorage.clear();
+          limparSessaoPreservandoEmpresa();
           await supabase.auth.signOut();
           if (ativo) setLimpandoSessao(false);
         }
@@ -139,7 +145,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<AcessoPorLink />} />
+          <Route path="/" element={<RootRoute />} />
           <Route path="/cadastro" element={<AcessoPorLink />} />
           <Route path="/esqueci-senha" element={<AcessoPorLink />} />
           <Route path="/redefinir-senha" element={<AcessoPorLink />} />

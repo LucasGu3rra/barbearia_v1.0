@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';// Ajuste o caminho se sua pasta for diferente
+import { montarRotaEmpresa } from '../../services/empresa';
 
 export default function EsqueciSenha() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [mensagem, setMensagem] = useState(null);
   const navigate = useNavigate();
+  const { empresaSlug } = useParams();
 
   const handleRecuperarSenha = async (e) => {
     e.preventDefault();
@@ -17,9 +19,8 @@ export default function EsqueciSenha() {
 
     try {
       // O Supabase dispara o e-mail e redireciona o usuário de volta para o app
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'http://localhost:5173/redefinir-senha', // Para onde ele volta depois de clicar no email
-      });
+      const redirectTo = `${window.location.origin}${montarRotaEmpresa(empresaSlug, '/redefinir-senha')}`;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
 
       if (error) throw error;
       
@@ -79,7 +80,7 @@ export default function EsqueciSenha() {
 
         <div className="mt-8 text-center">
           <button 
-            onClick={() => navigate('/')} 
+            onClick={() => navigate(montarRotaEmpresa(empresaSlug, ''))} 
             className="text-zinc-500 hover:text-white text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 w-full"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>

@@ -23,7 +23,7 @@ export default function TelaCorte() {
     const id = user?.id || localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
     
     if (!id) {
-        navigate('/');
+        navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
         return;
     }
 
@@ -74,12 +74,12 @@ export default function TelaCorte() {
         : '--/--',
       tipoCorte: ultimoCorte?.tipo_corte || 'Nenhum corte registrado'
     });
-  }, [empresaId, navigate, user?.id]);
+  }, [empresaId, empresaSlug, navigate, user?.id]);
 
   useEffect(() => {
     if (authLoading || !empresaId) return;
     if (!empresaSlug || empresaAtual?.slug !== empresaSlug) {
-      navigate('/');
+      navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
       return;
     }
 

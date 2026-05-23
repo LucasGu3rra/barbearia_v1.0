@@ -42,7 +42,7 @@ export default function TelaBloqueio() {
   useEffect(() => {
     if (authLoading || !empresaId) return;
     if (!empresaSlug || empresaAtual?.slug !== empresaSlug) {
-      navigate('/');
+      navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
       return;
     }
 

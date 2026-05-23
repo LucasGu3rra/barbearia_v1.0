@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { montarRotaEmpresa } from '../../services/empresa';
 
 export default function RedefinirSenha() {
   const [senha, setSenha] = useState('');
@@ -14,6 +15,7 @@ export default function RedefinirSenha() {
   const [mensagem, setMensagem] = useState(null);
   const [sessaoValida, setSessaoValida] = useState(true);
   const navigate = useNavigate();
+  const { empresaSlug } = useParams();
 
   // Quando a tela abre, o Supabase lê a URL do e-mail para validar o acesso
   useEffect(() => {
@@ -50,7 +52,7 @@ export default function RedefinirSenha() {
       // Desloga o usuário da sessão temporária e manda pra tela inicial após 3 segundos
       setTimeout(async () => {
         await supabase.auth.signOut();
-        navigate('/');
+        navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
       }, 3000);
 
     } catch (error) {
@@ -138,7 +140,7 @@ export default function RedefinirSenha() {
           </form>
         ) : (
           <button 
-            onClick={() => navigate('/esqueci-senha')} 
+            onClick={() => navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '/esqueci-senha') : '/esqueci-senha')} 
             className="w-full bg-[#27272a] text-white font-bold py-4 rounded-2xl mt-4"
           >
             Solicitar novo link

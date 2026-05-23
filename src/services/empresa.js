@@ -2,6 +2,28 @@ import { supabase } from './supabase';
 
 export const EMPRESA_PADRAO_ID = '00000000-0000-0000-0000-000000000001';
 export const EMPRESA_PADRAO_SLUG = 'barbearia-do-joao';
+export const ULTIMA_EMPRESA_SLUG_KEY = 'ultimaEmpresaSlug';
+
+const slugSeguro = (slug) => /^[a-z0-9-]+$/.test(String(slug || ''));
+
+export const salvarUltimaEmpresaSlug = (slug) => {
+  if (typeof window === 'undefined' || !slugSeguro(slug)) return;
+  window.localStorage.setItem(ULTIMA_EMPRESA_SLUG_KEY, slug);
+};
+
+export const obterUltimaEmpresaSlug = () => {
+  if (typeof window === 'undefined') return null;
+  const slug = window.localStorage.getItem(ULTIMA_EMPRESA_SLUG_KEY);
+  return slugSeguro(slug) ? slug : null;
+};
+
+export const limparSessaoPreservandoEmpresa = () => {
+  if (typeof window === 'undefined') return;
+  const slug = obterUltimaEmpresaSlug();
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+  if (slug) salvarUltimaEmpresaSlug(slug);
+};
 
 export const getEmpresaPorSlug = async (slug) => {
   const slugBusca = slug || EMPRESA_PADRAO_SLUG;
