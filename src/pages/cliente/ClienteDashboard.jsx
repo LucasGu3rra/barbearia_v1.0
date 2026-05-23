@@ -9,6 +9,7 @@ import DrawerClientes from './DrawerClientes';
 import { limparSessaoPreservandoEmpresa, montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
 import ClienteDashboardAvulso from './ClienteDashboardAvulso';
 import ClienteDashboardPlano from './ClienteDashboardPlano';
+import ClienteServicoPickerModal from './ClienteServicoPickerModal';
 import { parseDataSupabase } from './clienteDashboardUtils';
 
 const getClienteId = (userId) => {
@@ -89,6 +90,7 @@ export default function ClienteDashboard() {
   const [tipoCliente, setTipoCliente] = useState(null);
   const [agendamentoAtivo, setAgendamentoAtivo] = useState(false);
   const [modalAgendamentoAberto, setModalAgendamentoAberto] = useState(false);
+  const [seletorServicoAberto, setSeletorServicoAberto] = useState(false);
   const [servicoAgendamentoInicial, setServicoAgendamentoInicial] = useState(null);
   const [modoAgendamento, setModoAgendamento] = useState('avulso');
   const [servicosAvulsos, setServicosAvulsos] = useState([]);
@@ -189,6 +191,7 @@ export default function ClienteDashboard() {
           : '--/--',
         planoId: ass?.plano_escolhido || null,
         planoNome: planoInfo?.nome || 'Plano',
+        servicoId: planoInfo?.servico_id || null,
         duracaoMinutos: Number(planoInfo?.duracao_minutos || 30),
         precoPlano: planoInfo?.preco || 0,
         proximoPlano: ass?.proximo_plano,
@@ -294,6 +297,14 @@ export default function ClienteDashboard() {
 
   const handleFechamentoAgendamento = (resultado) => {
     setModalAgendamentoAberto(false);
+
+    if (resultado?.voltarParaServicos) {
+      setModoAgendamento('avulso');
+      setServicoAgendamentoInicial(null);
+      setSeletorServicoAberto(true);
+      return;
+    }
+
     setModoAgendamento(tipoCliente === 'ativo' ? 'plano' : 'avulso');
     setServicoAgendamentoInicial(null);
     if (resultado?.sucesso) {
@@ -314,9 +325,17 @@ export default function ClienteDashboard() {
       exibirAlerta('Agendamento Indisponível', 'No momento esta barbearia não está aceitando agendamento online.');
       return;
     }
-    setModoAgendamento(tipoCliente === 'ativo' ? 'plano' : 'avulso');
-    setServicoAgendamentoInicial(null);
-    setModalAgendamentoAberto(true);
+    if (tipoCliente === 'ativo') {
+      if (!dados?.servicoId) {
+        exibirAlerta('Plano sem servico', 'Este plano ainda nao tem um servico vinculado. Peca para o barbeiro configurar no painel de planos.');
+        return;
+      }
+      setModoAgendamento('plano');
+      setServicoAgendamentoInicial(dados.servicoId);
+      setModalAgendamentoAberto(true);
+      return;
+    }
+    setSeletorServicoAberto(true);
   };
   const abrirCheckoutPlano = () => {
     setMenuAberto(false);
@@ -344,6 +363,16 @@ export default function ClienteDashboard() {
           servicoInicialId={servicoAgendamentoInicial}
         />
       )}
+      <ClienteServicoPickerModal
+        isOpen={seletorServicoAberto}
+        onClose={() => setSeletorServicoAberto(false)}
+        servicos={servicosAvulsos}
+        onSelecionarServico={(servicoId) => {
+          setModoAgendamento('avulso');
+          setServicoAgendamentoInicial(servicoId);
+          setModalAgendamentoAberto(true);
+        }}
+      />
       <DrawerClientes
         isOpen={menuAberto}
         onClose={fecharMenu}
@@ -522,6 +551,10 @@ export default function ClienteDashboard() {
       exibirAlerta('Agendamento indisponível', 'No momento esta barbearia não está aceitando agendamento online para clientes sem plano ativo.');
       return;
     }
+    if (typeof servicoId !== 'string') {
+      setSeletorServicoAberto(true);
+      return;
+    }
     setModoAgendamento('avulso');
     setServicoAgendamentoInicial(servicoId);
     setModalAgendamentoAberto(true);
@@ -530,6 +563,10 @@ export default function ClienteDashboard() {
   const abrirAgendamentoAvulsoPendente = (servicoId = null) => {
     if (!agendamentoAtivo) {
       exibirAlerta('Agendamento indisponível', 'No momento esta barbearia não está aceitando agendamento online.');
+      return;
+    }
+    if (typeof servicoId !== 'string') {
+      setSeletorServicoAberto(true);
       return;
     }
     setModoAgendamento('avulso');
@@ -548,8 +585,13 @@ export default function ClienteDashboard() {
       return;
     }
 
+    if (!dados?.servicoId) {
+      exibirAlerta('Plano sem servico', 'Este plano ainda nao tem um servico vinculado. Peca para o barbeiro configurar no painel de planos.');
+      return;
+    }
+
     setModoAgendamento('plano');
-    setServicoAgendamentoInicial(null);
+    setServicoAgendamentoInicial(dados.servicoId);
     setModalAgendamentoAberto(true);
   };
 
