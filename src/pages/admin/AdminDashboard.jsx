@@ -229,6 +229,34 @@ export default function AdminDashboard() {
     }
   };
 
+  const confirmarExclusaoAgendamento = (agendamento) => {
+    const nomeCliente = agendamento.clientes?.nome || 'Cliente';
+    const horario = formatarHora(agendamento.data_hora);
+    showConfirm(
+      'Excluir Agendamento',
+      `Tem certeza que deseja excluir o agendamento de ${nomeCliente} as ${horario}?`,
+      () => efetuarExclusaoAgendamento(agendamento.id)
+    );
+  };
+
+  const efetuarExclusaoAgendamento = async (agendamentoId) => {
+    fecharModal();
+    try {
+      const { error } = await supabase
+        .from('agendamentos')
+        .delete()
+        .eq('id', agendamentoId)
+        .eq('empresa_id', empresaId);
+
+      if (error) throw error;
+      carregarDados();
+      showAlert('Removido', 'O agendamento foi excluido com sucesso.');
+    } catch (error) {
+      console.error(error);
+      showAlert('Erro', 'Nao foi possivel excluir o agendamento.');
+    }
+  };
+
   const formatarData = (dataStr) => {
     if (!dataStr) return '--/--';
     const d = new Date(dataStr);
@@ -468,7 +496,7 @@ export default function AdminDashboard() {
                   const nomeBarbeiro = ag.barbeiros?.nome || 'Sem barbeiro';
                   
                   return (
-                    <div key={ag.id} className="bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center">
+                    <div key={ag.id} className="bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center gap-3">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full border border-[#27272a] bg-[#09090b] flex items-center justify-center text-zinc-500 font-bold text-xs">
                           {getIniciais(nomeCli)}
@@ -478,11 +506,22 @@ export default function AdminDashboard() {
                           <p className="text-[10px] text-[#CEAA6B] font-medium uppercase tracking-wider"><span>{nomeServico} • {nomeBarbeiro}</span></p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-white"><span>{horaAgendamento}</span></p>
-                        <span className={`inline-block mt-1 text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${ag.status === 'concluido' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-[#CEAA6B]/10 text-[#CEAA6B]'}`}>
-                          {ag.status || 'Agendado'}
-                        </span>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-white"><span>{horaAgendamento}</span></p>
+                          <span className={`inline-block mt-1 text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${ag.status === 'concluido' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-[#CEAA6B]/10 text-[#CEAA6B]'}`}>
+                            {ag.status || 'Agendado'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => confirmarExclusaoAgendamento(ag)}
+                          className="w-9 h-9 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center active:scale-95 transition-transform"
+                          aria-label="Excluir agendamento"
+                          title="Excluir agendamento"
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
                       </div>
                     </div>
                   )
