@@ -1,21 +1,32 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabase';
+
+const barbeiroInicial = { nome: '', email: '', senha: '', filial_id: '' };
 
 export default function ModalBarbeiros({ isOpen, onClose, empresaId }) {
   const [barbeiros, setBarbeiros] = useState([]);
   const [filiais, setFiliais] = useState([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
-  const [novoBarbeiro, setNovoBarbeiro] = useState({ nome: '', filial_id: '' });
+  const [novoBarbeiro, setNovoBarbeiro] = useState(barbeiroInicial);
   const [adicionando, setAdicionando] = useState(false);
   const [erro, setErro] = useState('');
 
   const carregarDados = useCallback(async () => {
     setLoading(true);
     const [{ data: dadosBarbeiros }, { data: dadosFiliais }] = await Promise.all([
-      supabase.from('barbeiros').select('*, filiais(nome)').eq('empresa_id', empresaId).order('created_at', { ascending: true }),
-      supabase.from('filiais').select('id, nome').eq('empresa_id', empresaId).eq('ativa', true).order('nome'),
+      supabase
+        .from('barbeiros')
+        .select('id, nome, email, ativo, created_at, filiais(nome)')
+        .eq('empresa_id', empresaId)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('filiais')
+        .select('id, nome')
+        .eq('empresa_id', empresaId)
+        .eq('ativa', true)
+        .order('nome'),
     ]);
     setBarbeiros(dadosBarbeiros || []);
     setFiliais(dadosFiliais || []);
@@ -27,27 +38,48 @@ export default function ModalBarbeiros({ isOpen, onClose, empresaId }) {
   }, [isOpen, empresaId, carregarDados]);
 
   const salvarNovoBarbeiro = async () => {
-    if (!novoBarbeiro.nome.trim()) {
-      setErro('O nome do barbeiro é obrigatório.');
+    const nome = novoBarbeiro.nome.trim();
+    const email = novoBarbeiro.email.trim().toLowerCase();
+    const senha = novoBarbeiro.senha.trim();
+
+    if (!nome) {
+      setErro('O nome do barbeiro e obrigatorio.');
+      return;
+    }
+    if (!email) {
+      setErro('Informe o e-mail de login do barbeiro.');
+      return;
+    }
+    if (senha.length < 6) {
+      setErro('A senha precisa ter pelo menos 6 caracteres.');
       return;
     }
     if (!novoBarbeiro.filial_id) {
       setErro('Selecione uma filial.');
       return;
     }
+
     setSalvando(true);
     setErro('');
-    const { error } = await supabase
-      .from('barbeiros')
-      .insert([{ nome: novoBarbeiro.nome.trim(), filial_id: novoBarbeiro.filial_id, empresa_id: empresaId }]);
 
-    if (error) {
-      setErro('Erro ao salvar. Tente novamente.');
+    const { data, error } = await supabase.functions.invoke('criar-barbeiro-funcionario', {
+      body: {
+        empresa_id: empresaId,
+        filial_id: novoBarbeiro.filial_id,
+        nome,
+        email,
+        senha,
+      },
+    });
+
+    if (error || data?.error) {
+      setErro(data?.error || error?.message || 'Erro ao salvar. Tente novamente.');
     } else {
-      setNovoBarbeiro({ nome: '', filial_id: '' });
+      setNovoBarbeiro(barbeiroInicial);
       setAdicionando(false);
       await carregarDados();
     }
+
     setSalvando(false);
   };
 
@@ -66,27 +98,24 @@ export default function ModalBarbeiros({ isOpen, onClose, empresaId }) {
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
       <div className="bg-[#09090b] border border-[#27272a] w-full max-w-sm rounded-[32px] overflow-hidden shadow-2xl animate-[scaleIn_0.2s_ease-out]">
-
-        {/* Header */}
         <div className="relative p-6 pb-0">
           <button
             onClick={onClose}
             className="absolute right-4 top-4 w-8 h-8 rounded-full bg-[#121212] border border-[#27272a] flex items-center justify-center text-zinc-500 hover:text-white transition-colors"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#CEAA6B]/10 flex items-center justify-center text-[#CEAA6B]">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
             </div>
             <div>
               <h3 className="text-xl font-black text-white tracking-tight">Barbeiros</h3>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Gerenciar Profissionais</p>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Contas e profissionais</p>
             </div>
           </div>
         </div>
 
-        {/* Conteúdo */}
         <div className="p-6 pt-2 space-y-3 max-h-[60vh] overflow-y-auto">
           {loading ? (
             <p className="text-center text-zinc-500 text-sm py-6">Carregando...</p>
@@ -103,38 +132,54 @@ export default function ModalBarbeiros({ isOpen, onClose, empresaId }) {
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-sm text-white truncate">{barbeiro.nome}</p>
                     <p className="text-[10px] text-zinc-500 truncate mt-0.5">
-                      {barbeiro.filiais?.nome || 'Filial não encontrada'}
+                      {barbeiro.filiais?.nome || 'Filial nao encontrada'}
+                    </p>
+                    <p className="text-[10px] text-zinc-600 truncate mt-0.5">
+                      {barbeiro.email || 'Sem conta de login'}
                     </p>
                   </div>
-                  {/* Toggle ativo/inativo */}
                   <button
                     onClick={() => toggleAtivo(barbeiro)}
                     className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${barbeiro.ativo ? 'bg-[#CEAA6B]' : 'bg-[#27272a]'}`}
+                    aria-label={barbeiro.ativo ? 'Desativar barbeiro' : 'Ativar barbeiro'}
                   >
                     <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${barbeiro.ativo ? 'translate-x-5' : 'translate-x-0'}`} />
                   </button>
                 </div>
               ))}
 
-              {/* Formulário de novo barbeiro */}
               {adicionando && (
                 <div className="bg-[#121212] border border-[#CEAA6B]/30 rounded-2xl p-4 space-y-3">
                   <input
                     type="text"
                     placeholder="Nome do barbeiro *"
                     value={novoBarbeiro.nome}
-                    onChange={(e) => setNovoBarbeiro(prev => ({ ...prev, nome: e.target.value }))}
+                    onChange={(e) => setNovoBarbeiro((prev) => ({ ...prev, nome: e.target.value }))}
+                    className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#CEAA6B]/50 placeholder-zinc-600 transition-colors"
+                  />
+                  <input
+                    type="email"
+                    placeholder="E-mail de login *"
+                    value={novoBarbeiro.email}
+                    onChange={(e) => setNovoBarbeiro((prev) => ({ ...prev, email: e.target.value }))}
+                    className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#CEAA6B]/50 placeholder-zinc-600 transition-colors"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Senha inicial *"
+                    value={novoBarbeiro.senha}
+                    onChange={(e) => setNovoBarbeiro((prev) => ({ ...prev, senha: e.target.value }))}
                     className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#CEAA6B]/50 placeholder-zinc-600 transition-colors"
                   />
                   <select
                     value={novoBarbeiro.filial_id}
-                    onChange={(e) => setNovoBarbeiro(prev => ({ ...prev, filial_id: e.target.value }))}
+                    onChange={(e) => setNovoBarbeiro((prev) => ({ ...prev, filial_id: e.target.value }))}
                     className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#CEAA6B]/50 transition-colors appearance-none"
                     style={{ color: novoBarbeiro.filial_id ? 'white' : '#52525b' }}
                   >
                     <option value="" disabled>Selecione a filial *</option>
-                    {filiais.map(f => (
-                      <option key={f.id} value={f.id} style={{ color: 'white', background: '#09090b' }}>{f.nome}</option>
+                    {filiais.map((filial) => (
+                      <option key={filial.id} value={filial.id} style={{ color: 'white', background: '#09090b' }}>{filial.nome}</option>
                     ))}
                   </select>
                   {filiais.length === 0 && (
@@ -143,7 +188,7 @@ export default function ModalBarbeiros({ isOpen, onClose, empresaId }) {
                   {erro && <p className="text-red-500 text-[11px] font-medium">{erro}</p>}
                   <div className="flex gap-2">
                     <button
-                      onClick={() => { setAdicionando(false); setErro(''); setNovoBarbeiro({ nome: '', filial_id: '' }); }}
+                      onClick={() => { setAdicionando(false); setErro(''); setNovoBarbeiro(barbeiroInicial); }}
                       className="flex-1 py-3 rounded-xl border border-[#27272a] text-zinc-500 text-xs font-bold uppercase tracking-wider hover:text-white transition-colors"
                     >
                       Cancelar
@@ -162,7 +207,6 @@ export default function ModalBarbeiros({ isOpen, onClose, empresaId }) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="p-6 pt-0 space-y-2">
           {!adicionando && (
             <button

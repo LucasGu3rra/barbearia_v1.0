@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { usePwaInstall } from '../../../contexts/usePwaInstall';
+import { usePushNotifications } from '../../../contexts/usePushNotifications';
 
 const formatarNomeVisivel = (nomeCompleto) => {
   if (!nomeCompleto) return '';
@@ -46,15 +48,25 @@ export default function DrawerClientes({
   agendamentoAtivo = false,
   tipoCliente,
   onAgendar,
-  onVerPlanos,
   onPagarPlano,
   onHistoricoCompleto,
 }) {
   const [planosAbertos, setPlanosAbertos] = useState(false);
+  const { canInstall, installApp } = usePwaInstall();
+  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush } = usePushNotifications();
 
   if (!dados) return null;
 
-  const statusLabel = dados.status === 'ativa' ? 'Ativa' : dados.status ? 'Pendente' : 'Sem plano';
+  const instalarApp = async () => {
+    await installApp();
+    onClose();
+  };
+
+  const ativarNotificacoes = async () => {
+    await enablePush();
+  };
+
+  const statusLabel = dados.status === 'ativa' ? 'Ativa' : dados.status ? 'Pendente' : 'Sem plano ativo';
   const statusClass = dados.status === 'ativa' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : dados.status ? 'text-orange-400 bg-orange-500/10 border-orange-500/20' : 'text-zinc-500 bg-[#171717] border-[#333]';
 
   return (
@@ -121,22 +133,29 @@ export default function DrawerClientes({
           <div>
             <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-3">Ações rápidas</p>
             <div className="space-y-3">
-              <MenuButton onClick={onAgendar} disabled={!agendamentoAtivo} badge={agendamentoAtivo ? 'Abrir' : 'Off'}>
-                Agendamento
-              </MenuButton>
+              {tipoCliente !== 'avulso' && (
+                <MenuButton onClick={onAgendar} disabled={!agendamentoAtivo} badge={agendamentoAtivo ? 'Abrir' : 'Off'}>
+                  Agendamento
+                </MenuButton>
+              )}
               {tipoCliente === 'pendente' && (
                 <MenuButton onClick={onPagarPlano} badge="Pix">
                   Pagar plano
                 </MenuButton>
               )}
-              {tipoCliente === 'avulso' && (
-                <MenuButton onClick={onVerPlanos} badge="Planos">
-                  Ver planos
-                </MenuButton>
-              )}
               <MenuButton onClick={onHistoricoCompleto} badge="Ver">
                 Historico completo
               </MenuButton>
+              {canInstall && (
+                <MenuButton onClick={instalarApp} badge="App">
+                  Instalar app
+                </MenuButton>
+              )}
+              {pushAvailable && (
+                <MenuButton onClick={ativarNotificacoes} disabled={pushStatus === 'saving'} badge={pushEnabled ? 'On' : 'Push'}>
+                  {pushEnabled ? 'Notificacoes ativas' : 'Ativar notificacoes'}
+                </MenuButton>
+              )}
             </div>
           </div>
 

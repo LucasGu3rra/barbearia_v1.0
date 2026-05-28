@@ -1,9 +1,9 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { supabase } from '../../services/supabase';
-import { useAuth } from '../../contexts/useAuth';
-import { montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
+import { supabase } from '../../../services/supabase';
+import { useAuth } from '../../../contexts/useAuth';
+import { montarRotaEmpresa, normalizarTelefoneBrasil } from '../../../services/empresa';
 
 export default function TelaBloqueio() {
   const navigate = useNavigate();

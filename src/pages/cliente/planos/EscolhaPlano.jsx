@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { supabase } from '../../services/supabase';
-import { useAuth } from '../../contexts/useAuth';
-import { getEmpresaPorSlug, montarRotaEmpresa, normalizarTelefoneBrasil } from '../../services/empresa';
+import { supabase } from '../../../services/supabase';
+import { useAuth } from '../../../contexts/useAuth';
+import { getEmpresaPorSlug, montarRotaEmpresa, normalizarTelefoneBrasil } from '../../../services/empresa';
 
 const formatarMoeda = (valor) => `R$${Number(valor || 0).toFixed(0)}`;
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Icon } from './ClienteDashboardParts';
-import { formatarMoeda } from './clienteDashboardUtils';
+import { formatarMoeda } from '../../cliente/utils/clienteDashboardUtils';
 
 const normalizar = (valor = '') => String(valor)
   .normalize('NFD')
@@ -143,6 +143,11 @@ export default function ClienteServicoSelector({
 
         {avulsos.length > 0 && (
           <div className={`space-y-3 ${categorias.length > 0 ? 'pt-2' : ''}`}>
+            {categorias.length > 0 && (
+              <p className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.22em] px-1">
+                Servicos avulsos
+              </p>
+            )}
             {avulsos.map((servico) => (
               <ServicoItem key={servico.id} servico={servico} onClick={() => onSelecionarServico(servico.id)} />
             ))}

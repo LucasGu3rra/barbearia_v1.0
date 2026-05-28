@@ -1,8 +1,8 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../services/supabase';
-import { useAuth } from '../../contexts/useAuth';
+import { supabase } from '../../../services/supabase';
+import { useAuth } from '../../../contexts/useAuth';
 
 export default function PerfilCliente() {
   const navigate = useNavigate();

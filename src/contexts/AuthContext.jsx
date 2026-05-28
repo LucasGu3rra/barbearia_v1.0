@@ -92,6 +92,19 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
+    const carregarSessaoInicial = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        await handleSession(data.session);
+      } catch (error) {
+        console.error('Erro ao restaurar sessao:', error);
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    carregarSessaoInicial();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
 
