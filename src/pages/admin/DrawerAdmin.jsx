@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { usePwaInstall } from '../../contexts/usePwaInstall';
+import { usePushNotifications } from '../../contexts/usePushNotifications';
 
 export default function DrawerAdmin({ 
   isOpen, 
@@ -14,6 +16,8 @@ export default function DrawerAdmin({
 }) {
   const [modalFinanceiro, setModalFinanceiro] = useState(false);
   const [configAberto, setConfigAberto] = useState(false);
+  const { canInstall, installApp } = usePwaInstall();
+  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush } = usePushNotifications();
 
   if (!isOpen) return null;
 
@@ -26,6 +30,15 @@ export default function DrawerAdmin({
       onClose();
       acao();
     }
+  };
+
+  const instalarApp = async () => {
+    await installApp();
+    onClose();
+  };
+
+  const ativarNotificacoes = async () => {
+    await enablePush();
   };
 
   return (
@@ -58,6 +71,37 @@ export default function DrawerAdmin({
           </button>
 
           {/* Botão Planos */}
+          {canInstall && (
+            <button
+              onClick={instalarApp}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#CEAA6B]/10 flex items-center justify-center text-[#CEAA6B] group-hover:bg-[#CEAA6B] group-hover:text-black transition-all">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><rect x="4" y="17" width="16" height="4" rx="1"></rect></svg>
+              </div>
+              <div className="text-left">
+                <span className="block font-bold text-sm">Instalar app</span>
+                <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">Adicionar na tela inicial</span>
+              </div>
+            </button>
+          )}
+
+          {pushAvailable && (
+            <button
+              onClick={ativarNotificacoes}
+              disabled={pushStatus === 'saving'}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group disabled:opacity-60"
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#CEAA6B]/10 flex items-center justify-center text-[#CEAA6B] group-hover:bg-[#CEAA6B] group-hover:text-black transition-all">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+              </div>
+              <div className="text-left">
+                <span className="block font-bold text-sm">{pushEnabled ? 'Notificacoes ativas' : 'Ativar notificacoes'}</span>
+                <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">Avisos do sistema</span>
+              </div>
+            </button>
+          )}
+
           <button
             onClick={() => { if(onOpenPlanos) onOpenPlanos(); onClose(); }}
             className="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group"

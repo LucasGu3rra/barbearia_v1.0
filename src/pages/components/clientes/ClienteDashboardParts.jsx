@@ -1,4 +1,4 @@
-import { formatarMoeda } from './clienteDashboardUtils';
+import { formatarMoeda } from '../../cliente/utils/clienteDashboardUtils';
 
 export function Icon({ name, className = 'w-5 h-5' }) {
   const icons = {
@@ -9,11 +9,16 @@ export function Icon({ name, className = 'w-5 h-5' }) {
     tool: <><path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2.8-2.8 2.2-2.6z" /></>,
     sparkles: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" /><path d="m5 3 .7 2.3L8 6l-2.3.7L5 9l-.7-2.3L2 6l2.3-.7L5 3z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15z" /></>,
     calendar: <><path d="M8 2v4" /><path d="M16 2v4" /><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18" /></>,
+    calendarOff: <><path d="M8 2v4" /><path d="M16 2v4" /><path d="M3 10h7" /><path d="M14 10h7" /><path d="M10 21H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11" /><path d="m16 16 5 5" /><path d="m21 16-5 5" /></>,
     check: <><path d="M20 6 9 17l-5-5" /></>,
     x: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
     chevron: <><path d="m9 18 6-6-6-6" /></>,
     whatsapp: <><path d="M3 21 4.8 16.3A8.5 8.5 0 1 1 8 19.2L3 21z" /><path d="M9 9c.2 3 2.8 5.3 6 6" /></>,
+    copy: <><rect x="9" y="9" width="13" height="13" rx="2" /><rect x="2" y="2" width="13" height="13" rx="2" /></>,
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+    money: <><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 8h.01" /><path d="M11 12h1v4h1" /></>,
+    store: <><path d="M3 9h18l-1-5H4L3 9z" /><path d="M5 9v10h14V9" /><path d="M9 19v-6h6v6" /></>,
   };
 
   return (

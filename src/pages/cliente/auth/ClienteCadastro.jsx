@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { supabase } from '../../services/supabase';
-import { getEmpresaPorSlug, montarRotaEmpresa } from '../../services/empresa';
+import { supabase } from '../../../services/supabase';
+import { getEmpresaPorSlug, montarRotaEmpresa } from '../../../services/empresa';
 
 function EyeIcon({ visible }) {
   return (

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { supabase } from '../../services/supabase';// Ajuste o caminho se sua pasta for diferente
-import { montarRotaEmpresa } from '../../services/empresa';
+import { supabase } from '../../../services/supabase';// Ajuste o caminho se sua pasta for diferente
+import { montarRotaEmpresa } from '../../../services/empresa';
 
 export default function EsqueciSenha() {
   const [email, setEmail] = useState('');

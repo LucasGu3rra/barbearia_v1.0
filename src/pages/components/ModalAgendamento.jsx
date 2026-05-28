@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabase';
-import ClienteAgendamentoStepBar from '../cliente/ClienteAgendamentoStepBar';
+import ClienteAgendamentoStepBar from './clientes/ClienteAgendamentoStepBar';
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -40,16 +40,15 @@ const horarioCabeNoFuncionamento = (horario, duracao, regra) => {
   if (!regra?.horario_inicio || !regra?.horario_fim) return false;
 
   const inicioMin = horarioParaMinutos(horario);
-  const fimMin = inicioMin + duracao;
   const aberturaMin = horarioParaMinutos(regra.horario_inicio.substring(0, 5));
   const fechamentoMin = horarioParaMinutos(regra.horario_fim.substring(0, 5));
 
-  if (inicioMin < aberturaMin || fimMin > fechamentoMin) return false;
+  if (inicioMin < aberturaMin || inicioMin >= fechamentoMin) return false;
 
   if (regra.intervalo_inicio && regra.intervalo_fim) {
     const pausaInicioMin = horarioParaMinutos(regra.intervalo_inicio.substring(0, 5));
     const pausaFimMin = horarioParaMinutos(regra.intervalo_fim.substring(0, 5));
-    if (inicioMin < pausaFimMin && fimMin > pausaInicioMin) return false;
+    if (inicioMin >= pausaInicioMin && inicioMin < pausaFimMin) return false;
   }
 
   return true;
@@ -93,7 +92,16 @@ function Icon({ name, className = '' }) {
   );
 }
 
-export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoCliente, empresaId, planoCliente = null, servicoInicialId = null }) {
+export default function ModalAgendamento({
+  isOpen,
+  onClose,
+  clienteId,
+  tipoCliente,
+  empresaId,
+  planoCliente = null,
+  servicoInicialId = null,
+  voltarParaServicosAoVoltar = false,
+}) {
   const [step, setStep] = useState(1);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -300,7 +308,7 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
   const prevStep = () => {
     if (step <= 1) fechar();
     else if (step === 2 && servicoPreSelecionado) {
-      onClose(isAssinante ? null : { voltarParaServicos: true });
+      onClose(!isAssinante && voltarParaServicosAoVoltar ? { voltarParaServicos: true } : null);
     }
     else setStep(s => s - 1);
   };
@@ -368,7 +376,9 @@ export default function ModalAgendamento({ isOpen, onClose, clienteId, tipoClien
       setStep(5);
     } catch (e) {
       console.error(e);
-      if (e.code === '23505' || ['cliente_agendamento_conflito', 'barbeiro_agendamento_conflito'].includes(e.message)) {
+      if (e.message === 'cliente_agendamento_dia_conflito') {
+        setErro('Voce ja possui um agendamento avulso ativo neste dia.');
+      } else if (e.code === '23505' || ['cliente_agendamento_conflito', 'barbeiro_agendamento_conflito'].includes(e.message)) {
         setErro('Esse horario acabou de ser ocupado. Escolha outro horario.');
       } else {
         setErro(e.message || 'Erro ao confirmar. Tente novamente.');
