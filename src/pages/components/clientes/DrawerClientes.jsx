@@ -53,7 +53,7 @@ export default function DrawerClientes({
 }) {
   const [planosAbertos, setPlanosAbertos] = useState(false);
   const { canInstall, installApp } = usePwaInstall();
-  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush } = usePushNotifications();
+  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush, sendTestPush } = usePushNotifications();
 
   if (!dados) return null;
 
@@ -63,6 +63,11 @@ export default function DrawerClientes({
   };
 
   const ativarNotificacoes = async () => {
+    if (pushEnabled) {
+      await sendTestPush();
+      return;
+    }
+
     await enablePush();
   };
 
@@ -152,8 +157,8 @@ export default function DrawerClientes({
                 </MenuButton>
               )}
               {pushAvailable && (
-                <MenuButton onClick={ativarNotificacoes} disabled={pushStatus === 'saving'} badge={pushEnabled ? 'On' : 'Push'}>
-                  {pushEnabled ? 'Notificacoes ativas' : 'Ativar notificacoes'}
+                <MenuButton onClick={ativarNotificacoes} disabled={['saving', 'testing'].includes(pushStatus)} badge={pushEnabled ? 'Teste' : 'Push'}>
+                  {pushEnabled ? 'Enviar teste push' : 'Ativar notificacoes'}
                 </MenuButton>
               )}
             </div>

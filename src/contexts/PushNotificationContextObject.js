@@ -6,4 +6,5 @@ export const PushNotificationContext = createContext({
   permission: 'unsupported',
   status: 'idle',
   enablePush: async () => ({ ok: false }),
+  sendTestPush: async () => ({ ok: false }),
 });
