@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { montarRotaEmpresa } from '../../../services/empresa';
+import { notificarAgendamento } from '../../../services/notifications';
 import { supabase } from '../../../services/supabase';
 
 export default function useClienteAgendamentoFlow({
@@ -150,6 +151,7 @@ export default function useClienteAgendamentoFlow({
         return;
       }
 
+      notificarAgendamento({ agendamentoId: agendamento.id, evento: 'cancelado' });
       exibirAlerta('Cancelado', 'Seu agendamento foi cancelado.');
       carregarDados(clienteIdAtual());
     });

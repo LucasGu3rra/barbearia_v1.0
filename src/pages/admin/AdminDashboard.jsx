@@ -6,6 +6,7 @@ import ModalServicos from '../components/ModalServicos';
 import ModalConfiguracoes from '../components/ModalConfiguracoes';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { enviarPushParaUsuarios, notificarAgendamento } from '../../services/notifications';
 import ModalAlerta from "../components/ModalAlerta";
 import ModalPlanos from "../components/ModalPlanos";
 import DrawerAdmin from "./DrawerAdmin";
@@ -195,12 +196,23 @@ export default function AdminDashboard() {
     try {
       const dataVencimento = new Date();
       dataVencimento.setDate(dataVencimento.getDate() + 30);
+      const assinaturaAtivada = aguardandoAtivacao.find((item) => item.assinatura.id === assinaturaId);
       const { error } = await supabase
         .from('assinaturas')
         .update({ status: 'ativa', data_vencimento: dataVencimento.toISOString() })
         .eq('id', assinaturaId)
         .eq('empresa_id', empresaId);
       if (error) throw error;
+      if (assinaturaAtivada?.id) {
+        enviarPushParaUsuarios({
+          empresaId,
+          userIds: [assinaturaAtivada.id],
+          titulo: 'Plano ativado',
+          corpo: 'Seu plano foi ativado. Agora voce ja pode usar os beneficios.',
+          tipo: 'plano_ativado',
+          dados: { url: montarRotaEmpresa(empresaSlug, '/dashboard') },
+        });
+      }
       carregarDados(); 
       showAlert('Sucesso', 'A assinatura foi ativada e o acesso do cliente está liberado.');
     } catch (error) {
@@ -242,6 +254,7 @@ export default function AdminDashboard() {
   const efetuarExclusaoAgendamento = async (agendamentoId) => {
     fecharModal();
     try {
+      await notificarAgendamento({ agendamentoId, evento: 'excluido' });
       const { error } = await supabase
         .from('agendamentos')
         .delete()
