@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
   EdgeRuntime.waitUntil((async () => {
     await sleep(delaySeconds * 1000);
 
-    await fetch(`${supabaseUrl}/functions/v1/enviar-push`, {
+    const response = await fetch(`${supabaseUrl}/functions/v1/enviar-push`, {
       method: "POST",
       headers: {
         Authorization: authHeader,
@@ -58,6 +58,13 @@ Deno.serve(async (req) => {
         tipo: body.tipo || "teste_push_atrasado",
         dados: body.dados || {},
       }),
+    });
+
+    const responseBody = await response.text().catch(() => "");
+    console.log("teste-push-1min enviar-push result", {
+      status: response.status,
+      ok: response.ok,
+      body: responseBody.slice(0, 500),
     });
   })());
 

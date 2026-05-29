@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabase';
+import { notificarAgendamento } from '../../services/notifications';
 import ClienteAgendamentoStepBar from './clientes/ClienteAgendamentoStepBar';
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -359,7 +360,7 @@ export default function ModalAgendamento({
       await verificarConflitoAgendamento(dataHora);
       const barbeiroId = await obterBarbeiroDisponivel(dataHora);
 
-      const { error } = await supabase.from('agendamentos').insert([{
+      const { data: agendamentoCriado, error } = await supabase.from('agendamentos').insert([{
         cliente_id: clienteId,
         empresa_id: empresaId,
         filial_id: filialSelecionada.id,
@@ -369,9 +370,12 @@ export default function ModalAgendamento({
         tipo_cliente: tipoCliente,
         duracao_minutos: duracaoServico,
         status: 'agendado',
-      }]);
+      }]).select('id').single();
 
       if (error) throw error;
+      if (agendamentoCriado?.id) {
+        notificarAgendamento({ agendamentoId: agendamentoCriado.id, evento: 'criado' });
+      }
       setConfirmado(true);
       setStep(5);
     } catch (e) {
