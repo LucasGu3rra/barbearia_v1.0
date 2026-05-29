@@ -382,6 +382,10 @@ export default function ModalAgendamento({
       console.error(e);
       if (e.message === 'cliente_agendamento_dia_conflito') {
         setErro('Voce ja possui um agendamento avulso ativo neste dia.');
+      } else if (e.message === 'cliente_plano_agendamento_dia_conflito') {
+        setErro('Seu plano permite apenas um agendamento por dia. Cancele dentro do prazo para reagendar.');
+      } else if (e.message === 'agendamento_online_desativado') {
+        setErro('A barbearia pausou novos agendamentos online agora.');
       } else if (e.code === '23505' || ['cliente_agendamento_conflito', 'barbeiro_agendamento_conflito'].includes(e.message)) {
         setErro('Esse horario acabou de ser ocupado. Escolha outro horario.');
       } else {

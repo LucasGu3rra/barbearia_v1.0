@@ -24,22 +24,32 @@ const jsonResponse = (body: unknown, status = 200) => (
   })
 );
 
-const formatarDataHora = (valor?: string) => {
-  if (!valor) return "Horario nao informado";
+const formatarPartesDataHora = (valor?: string) => {
+  const fallback = { data: "Data nao informada", hora: "Horario nao informado" };
+  if (!valor) return fallback;
   const data = new Date(valor);
-  if (Number.isNaN(data.getTime())) return "Horario nao informado";
-  return new Intl.DateTimeFormat("pt-BR", {
-    weekday: "short",
+  if (Number.isNaN(data.getTime())) return fallback;
+  const dataFormatada = new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "2-digit",
+    year: "numeric",
+    timeZone: "America/Sao_Paulo",
+  }).format(data);
+  const horaFormatada = new Intl.DateTimeFormat("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
   }).format(data);
+
+  return {
+    data: dataFormatada,
+    hora: horaFormatada,
+  };
 };
 
 const montarUrl = (empresaSlug?: string, destino = "dashboard") => {
   if (!empresaSlug) return "/";
-  return `/${empresaSlug}/${destino}`.replace(/\/+/g, "/");
+  return `/${[empresaSlug, destino].filter(Boolean).join("/")}`;
 };
 
 const enviarPush = async ({
@@ -206,8 +216,7 @@ Deno.serve(async (req) => {
 
   const nomeCliente = agendamento.clientes?.nome || "Cliente";
   const nomeServico = agendamento.servicos?.nome || "Servico";
-  const nomeBarbeiro = agendamento.barbeiros?.nome || "barbeiro";
-  const quando = formatarDataHora(agendamento.data_hora);
+  const quando = formatarPartesDataHora(agendamento.data_hora);
   const empresaSlug = agendamento.empresas?.slug;
   const urlCliente = montarUrl(empresaSlug, "dashboard");
   const urlPainel = montarUrl(empresaSlug, "dashboard");
@@ -226,7 +235,7 @@ Deno.serve(async (req) => {
       empresaId: agendamento.empresa_id,
       targetUserIds: [agendamento.cliente_id],
       titulo: "Agendamento confirmado",
-      corpo: `${nomeServico} com ${nomeBarbeiro} - ${quando}.`,
+      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}.`,
       tipo: "agendamento_confirmado",
       dados: { url: urlCliente, agendamento_id: agendamento.id },
     }));
@@ -235,8 +244,8 @@ Deno.serve(async (req) => {
       supabaseAdmin,
       empresaId: agendamento.empresa_id,
       targetUserIds: usuariosEquipe,
-      titulo: "Novo agendamento",
-      corpo: `${nomeCliente} marcou ${nomeServico} - ${quando}.`,
+      titulo: "Novo agendamento!",
+      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
       tipo: "novo_agendamento",
       dados: { url: urlPainel, agendamento_id: agendamento.id },
     }));
@@ -248,7 +257,7 @@ Deno.serve(async (req) => {
       empresaId: agendamento.empresa_id,
       targetUserIds: [agendamento.cliente_id],
       titulo: "Agendamento cancelado",
-      corpo: `${nomeServico} de ${quando} foi cancelado.`,
+      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}.`,
       tipo: "agendamento_cancelado",
       dados: { url: urlCliente, agendamento_id: agendamento.id },
     }));
@@ -258,7 +267,7 @@ Deno.serve(async (req) => {
       empresaId: agendamento.empresa_id,
       targetUserIds: usuariosEquipe,
       titulo: "Agendamento cancelado",
-      corpo: `${nomeCliente} cancelou ${nomeServico} - ${quando}.`,
+      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
       tipo: "agendamento_cancelado",
       dados: { url: urlPainel, agendamento_id: agendamento.id },
     }));

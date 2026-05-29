@@ -66,6 +66,16 @@ export const registerPushSubscription = async ({
   const keys = subscriptionJson.keys || {};
   const now = new Date().toISOString();
 
+  await supabase
+    .from('push_subscriptions')
+    .update({
+      enabled: false,
+      updated_at: now,
+    })
+    .eq('empresa_id', empresaId)
+    .eq('endpoint', subscription.endpoint)
+    .neq('user_id', userId);
+
   const { error } = await supabase
     .from('push_subscriptions')
     .upsert({

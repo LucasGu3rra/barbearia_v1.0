@@ -78,6 +78,7 @@ function PrimeiroUso({
   dados,
   servicosAvulsos,
   temPlanos,
+  agendamentoAtivo,
   onAbrirPlanos,
   onAbrirAgendamentoSemPlano,
 }) {
@@ -95,11 +96,17 @@ function PrimeiroUso({
 
         <h2 className="text-white text-lg font-black mb-1">Escolha seu servico</h2>
 
-        <ClienteServicoSelector
-          servicos={servicosAvulsos}
-          onSelecionarServico={onAbrirAgendamentoSemPlano}
-          emptyText="Nenhum servico ativo disponivel."
-        />
+        {agendamentoAtivo ? (
+          <ClienteServicoSelector
+            servicos={servicosAvulsos}
+            onSelecionarServico={onAbrirAgendamentoSemPlano}
+            emptyText="Nenhum servico ativo disponivel."
+          />
+        ) : (
+          <AlertBox type="warn" icon="calendarOff">
+            A barbearia pausou novos agendamentos online agora. Para cortar, va direto ate a barbearia; planos continuam disponiveis.
+          </AlertBox>
+        )}
 
         {temPlanos && (
           <button onClick={onAbrirPlanos} className="btn primary">
@@ -141,13 +148,17 @@ function Recorrente({
 
         <div className="border-t border-[#252525] pt-4">
           <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.22em] mb-2">
-            {proximoAgendamento ? 'Proximo agendamento' : 'Sem agendamento ativo'}
+            {proximoAgendamento ? 'Proximo agendamento' : agendamentoAtivo ? 'Sem agendamento ativo' : 'Agendamento online pausado'}
           </p>
           <p className="text-white text-xl font-black">
-            {proximoAgendamento ? formatarDataAgendamento(proximoAgendamento.data_hora) : 'Pronto para agendar'}
+            {proximoAgendamento ? formatarDataAgendamento(proximoAgendamento.data_hora) : agendamentoAtivo ? 'Pronto para agendar' : 'Atendimento direto na barbearia'}
           </p>
           <p className="text-[#d8d3c8] text-xs mt-2 leading-relaxed">
-            {detalheAgendamento(proximoAgendamento)}
+            {proximoAgendamento
+              ? detalheAgendamento(proximoAgendamento)
+              : agendamentoAtivo
+              ? 'O cliente pode ter apenas um agendamento ativo por vez.'
+              : 'No momento os agendamentos pelo site estao desativados. Para cortar, va diretamente ate a barbearia e aguarde o atendimento presencial.'}
           </p>
         </div>
 
@@ -176,10 +187,11 @@ function Recorrente({
             </>
           ) : (
             <ActionCard
-              icon="scissors"
-              title="Escolher servico"
-              subtitle="corte, barba ou combo"
+              icon={agendamentoAtivo ? 'scissors' : 'calendarOff'}
+              title={agendamentoAtivo ? 'Escolher servico' : 'Agendamento pausado'}
+              subtitle={agendamentoAtivo ? 'corte, barba ou combo' : 'novos horarios indisponiveis'}
               onClick={onAbrirAgendamentoSemPlano}
+              disabled={!agendamentoAtivo}
             />
           )}
           {temPlanos && !temAgendamentoAtivo && (
@@ -221,7 +233,7 @@ function Recorrente({
         {!agendamentoAtivo && (
           <div className="alert warn">
             <Icon name="calendarOff" className="w-5 h-5 flex-shrink-0" />
-            <div className="alert-txt">A barbearia nao esta aceitando novos agendamentos online agora.</div>
+            <div className="alert-txt">A barbearia pausou novos agendamentos online. Para cortar, va direto ate a barbearia.</div>
           </div>
         )}
       </div>
@@ -251,6 +263,7 @@ export default function ClienteDashboardAvulso({
         dados={dados}
         servicosAvulsos={servicosAvulsos}
         temPlanos={temPlanos}
+        agendamentoAtivo={agendamentoAtivo}
         onAbrirPlanos={onAbrirPlanos}
         onAbrirAgendamentoSemPlano={onAbrirAgendamentoSemPlano}
       />

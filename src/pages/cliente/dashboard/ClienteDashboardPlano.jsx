@@ -110,12 +110,14 @@ export default function ClienteDashboardPlano({
   agendamentoAtivo,
   onAbrirAgendamentoPlano,
   onAbrirOutroServico,
+  onConfirmarCortePlano,
   onVerAgendamento,
   onCancelarAgendamento,
 }) {
   const planoAtivo = statusPlano === 'ativo';
   const podeAgendarComPlano = planoAtivo && agendamentoAtivo;
   const podeAgendarAvulso = agendamentoAtivo;
+  const podeConfirmarCorte = planoAtivo && (!dados.ilimitado ? Number(dados.cortesRestantes || 0) > 0 : true);
   const usados = Math.max(0, Number(dados.limiteTotal || 0) - Number(dados.cortesRestantes || 0));
   const temAgendamentoAtivo = Boolean(proximoAgendamento);
 
@@ -134,17 +136,21 @@ export default function ClienteDashboardPlano({
 
         <div className="border-t border-[#252525] pt-4">
           <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.22em] mb-2">
-            {temAgendamentoAtivo ? 'Proximo agendamento' : planoAtivo ? 'Plano ativo' : 'Plano pendente'}
+            {temAgendamentoAtivo ? 'Proximo agendamento' : planoAtivo && !agendamentoAtivo ? 'Plano sem agendamento online' : planoAtivo ? 'Plano ativo' : 'Plano pendente'}
           </p>
           <p className="text-white text-xl font-black">
-            {temAgendamentoAtivo ? formatarDataAgendamento(proximoAgendamento.data_hora) : planoAtivo ? dados.planoNome : 'Aguardando ativacao'}
+            {temAgendamentoAtivo ? formatarDataAgendamento(proximoAgendamento.data_hora) : planoAtivo && !agendamentoAtivo ? 'Confirme o corte no local' : planoAtivo ? dados.planoNome : 'Aguardando ativacao'}
           </p>
           <p className="text-[#d8d3c8] text-xs mt-2 leading-relaxed">
             {temAgendamentoAtivo
               ? detalheAgendamento(proximoAgendamento)
+              : planoAtivo && !agendamentoAtivo
+              ? 'Os horarios pelo site estao pausados. Ao chegar na barbearia, toque em Confirmar corte, o sistema consome 1 uso do plano e libera a tela verde para mostrar ao barbeiro.'
               : planoAtivo
               ? 'Use seu plano para agendar o servico incluso ou escolha outro servico avulso.'
-              : 'Seu plano foi solicitado. Enquanto aguarda ativacao, voce ainda pode agendar servicos avulsos.'}
+              : agendamentoAtivo
+              ? 'Seu plano foi solicitado. Enquanto aguarda ativacao, voce ainda pode agendar servicos avulsos.'
+              : 'Seu plano foi solicitado. O agendamento online esta pausado no momento.'}
           </p>
         </div>
 
@@ -181,17 +187,27 @@ export default function ClienteDashboardPlano({
             </>
           ) : (
             <>
+              {agendamentoAtivo ? (
+                <ActionCard
+                  icon={planoAtivo ? 'calendar' : 'clock'}
+                  title={planoAtivo ? 'Agendar com plano' : 'Plano pendente'}
+                  subtitle={planoAtivo ? 'servico incluso' : 'aguarde ativacao'}
+                  onClick={onAbrirAgendamentoPlano}
+                  disabled={!podeAgendarComPlano}
+                />
+              ) : (
+                <ActionCard
+                  icon={planoAtivo ? 'check' : 'clock'}
+                  title={planoAtivo ? 'Confirmar corte' : 'Plano pendente'}
+                  subtitle={planoAtivo ? 'consome 1 uso do plano' : 'aguarde ativacao'}
+                  onClick={onConfirmarCortePlano}
+                  disabled={!podeConfirmarCorte}
+                />
+              )}
               <ActionCard
-                icon={planoAtivo ? 'calendar' : 'clock'}
-                title={planoAtivo ? 'Agendar com plano' : 'Plano pendente'}
-                subtitle={planoAtivo ? 'servico incluso' : 'aguarde ativacao'}
-                onClick={onAbrirAgendamentoPlano}
-                disabled={!podeAgendarComPlano}
-              />
-              <ActionCard
-                icon="scissors"
-                title="Outro servico"
-                subtitle="servico avulso"
+                icon={agendamentoAtivo ? 'scissors' : 'calendarOff'}
+                title={agendamentoAtivo ? 'Outro servico' : 'Sem avulso online'}
+                subtitle={agendamentoAtivo ? 'servico avulso' : 'somente na barbearia'}
                 onClick={onAbrirOutroServico}
                 disabled={!podeAgendarAvulso}
               />

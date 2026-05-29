@@ -11,6 +11,7 @@ import ClienteCheckoutPlanoModal from '../../components/clientes/ClienteCheckout
 import ClienteHistoricoModal from '../../components/clientes/ClienteHistoricoModal';
 import ClienteShell from '../../components/clientes/ClienteShell';
 import ClienteServicoPickerModal from '../../components/clientes/ClienteServicoPickerModal';
+import { supabase } from '../../../services/supabase';
 import useClienteAgendamentoFlow from '../hooks/useClienteAgendamentoFlow';
 import useClienteDashboardData from '../hooks/useClienteDashboardData';
 import useClientePerfilActions from '../hooks/useClientePerfilActions';
@@ -134,6 +135,31 @@ export default function ClienteDashboard() {
   const abrirPlanos = () => {
     setMenuAberto(false);
     navigate(montarRotaEmpresa(slugEmpresa, '/planos'));
+  };
+
+  const confirmarCortePlano = async () => {
+    if (!empresaId) return;
+
+    const { error } = await supabase.rpc('confirmar_corte_plano', {
+      p_empresa_id: empresaId,
+    });
+
+    if (error) {
+      const mensagem = String(error.message || '');
+      if (mensagem.includes('cliente_plano_corte_dia_conflito')) {
+        exibirAlerta('Corte ja confirmado', 'Seu plano permite confirmar apenas um corte por dia.');
+      } else if (mensagem.includes('limite_plano_atingido')) {
+        exibirAlerta('Limite atingido', 'Voce ja usou todos os cortes disponiveis do seu plano neste mes.');
+      } else if (mensagem.includes('plano_ativo_nao_encontrado')) {
+        exibirAlerta('Plano indisponivel', 'Seu plano precisa estar ativo para confirmar o corte.');
+      } else {
+        exibirAlerta('Erro', 'Nao foi possivel confirmar o corte agora.');
+      }
+      return;
+    }
+
+    await carregarDados(clienteIdAtual());
+    navigate(montarRotaEmpresa(slugEmpresa, '/confirmado'));
   };
 
   const formatarDetalhesAgendamento = (agendamento) => {
@@ -304,6 +330,7 @@ export default function ClienteDashboard() {
         agendamentoAtivo={agendamentoAtivo}
         onAbrirAgendamentoPlano={abrirAgendamentoComPlano}
         onAbrirOutroServico={abrirAgendamentoAvulsoPendente}
+        onConfirmarCortePlano={confirmarCortePlano}
         onVerAgendamento={verAgendamentoAvulso}
         onCancelarAgendamento={(agendamento) => cancelarAgendamentoCliente(agendamento, prazoCancelamentoMinutos)}
       />

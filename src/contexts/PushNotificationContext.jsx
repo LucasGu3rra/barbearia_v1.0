@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './useAuth';
 import { PushNotificationContext } from './PushNotificationContextObject';
 import { supabase } from '../services/supabase';
@@ -68,6 +68,11 @@ export const PushNotificationProvider = ({ children }) => {
       return { ok: false, reason: 'error', error };
     }
   }, [syncSubscription]);
+
+  useEffect(() => {
+    if (!available || getNotificationPermission() !== 'granted') return;
+    Promise.resolve().then(() => syncSubscription());
+  }, [available, syncSubscription]);
 
   const sendTestPush = useCallback(async () => {
     if (!empresaId) return { ok: false, reason: 'missing-context' };
