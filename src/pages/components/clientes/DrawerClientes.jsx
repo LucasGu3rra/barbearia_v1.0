@@ -53,7 +53,17 @@ export default function DrawerClientes({
 }) {
   const [planosAbertos, setPlanosAbertos] = useState(false);
   const { canInstall, installApp } = usePwaInstall();
-  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush, sendTestPush } = usePushNotifications();
+  const {
+    visible: pushVisible,
+    available: pushAvailable,
+    configured: pushConfigured,
+    supported: pushSupported,
+    enabled: pushEnabled,
+    permission: pushPermission,
+    status: pushStatus,
+    enablePush,
+    sendTestPush,
+  } = usePushNotifications();
 
   if (!dados) return null;
 
@@ -63,6 +73,8 @@ export default function DrawerClientes({
   };
 
   const ativarNotificacoes = async () => {
+    if (!pushAvailable) return;
+
     if (pushEnabled) {
       await sendTestPush();
       return;
@@ -70,6 +82,22 @@ export default function DrawerClientes({
 
     await enablePush();
   };
+
+  const notificacaoLabel = (() => {
+    if (!pushConfigured) return 'Configurar notificacoes';
+    if (!pushSupported) return 'Notificacoes indisponiveis';
+    if (pushPermission === 'denied' || pushStatus === 'denied') return 'Notificacoes bloqueadas';
+    if (pushEnabled) return 'Enviar teste push';
+    return 'Ativar notificacoes';
+  })();
+
+  const notificacaoBadge = (() => {
+    if (!pushConfigured) return 'Env';
+    if (!pushSupported) return 'Off';
+    if (pushPermission === 'denied' || pushStatus === 'denied') return 'Bloq';
+    if (pushEnabled) return 'Teste';
+    return 'Push';
+  })();
 
   const statusLabel = dados.status === 'ativa' ? 'Ativa' : dados.status ? 'Pendente' : 'Sem plano ativo';
   const statusClass = dados.status === 'ativa' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : dados.status ? 'text-orange-400 bg-orange-500/10 border-orange-500/20' : 'text-zinc-500 bg-[#171717] border-[#333]';
@@ -156,9 +184,13 @@ export default function DrawerClientes({
                   Instalar app
                 </MenuButton>
               )}
-              {pushAvailable && (
-                <MenuButton onClick={ativarNotificacoes} disabled={['saving', 'testing'].includes(pushStatus)} badge={pushEnabled ? 'Teste' : 'Push'}>
-                  {pushEnabled ? 'Enviar teste push' : 'Ativar notificacoes'}
+              {pushVisible && (
+                <MenuButton
+                  onClick={ativarNotificacoes}
+                  disabled={!pushAvailable || ['saving', 'testing'].includes(pushStatus) || pushPermission === 'denied'}
+                  badge={notificacaoBadge}
+                >
+                  {notificacaoLabel}
                 </MenuButton>
               )}
             </div>
