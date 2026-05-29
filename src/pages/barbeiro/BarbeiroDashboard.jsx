@@ -337,7 +337,17 @@ function BarbeiroPerfilModal({ isOpen, onClose, barbeiro, user }) {
 
 function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfil }) {
   const { canInstall, installApp } = usePwaInstall();
-  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush, sendTestPush } = usePushNotifications();
+  const {
+    visible: pushVisible,
+    available: pushAvailable,
+    configured: pushConfigured,
+    supported: pushSupported,
+    enabled: pushEnabled,
+    permission: pushPermission,
+    status: pushStatus,
+    enablePush,
+    sendTestPush,
+  } = usePushNotifications();
 
   if (!isOpen) return null;
 
@@ -347,6 +357,8 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
     onClose();
   };
   const ativarNotificacoes = async () => {
+    if (!pushAvailable) return;
+
     if (pushEnabled) {
       await sendTestPush();
       return;
@@ -354,6 +366,22 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
 
     await enablePush();
   };
+
+  const notificacaoLabel = (() => {
+    if (!pushConfigured) return 'Configurar notificacoes';
+    if (!pushSupported) return 'Notificacoes indisponiveis';
+    if (pushPermission === 'denied' || pushStatus === 'denied') return 'Notificacoes bloqueadas';
+    if (pushEnabled) return 'Enviar teste push';
+    return 'Ativar notificacoes';
+  })();
+
+  const notificacaoSubtexto = (() => {
+    if (!pushConfigured) return 'Chave VAPID ausente';
+    if (!pushSupported) return 'Use HTTPS ou app instalado';
+    if (pushPermission === 'denied' || pushStatus === 'denied') return 'Liberar nas configuracoes';
+    if (pushEnabled) return 'Enviar para este aparelho';
+    return 'Avisos da agenda';
+  })();
 
   return (
     <div
@@ -439,11 +467,11 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
               <svg className="shrink-0 text-[#d5b451]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
           )}
-          {pushAvailable && (
+          {pushVisible && (
             <button
               type="button"
               onClick={ativarNotificacoes}
-              disabled={['saving', 'testing'].includes(pushStatus)}
+              disabled={!pushAvailable || ['saving', 'testing'].includes(pushStatus) || pushPermission === 'denied'}
               className="relative flex w-full items-center justify-between rounded-[18px] bg-[#101011] px-4 py-3.5 text-left active:scale-[0.99] disabled:opacity-60"
             >
               <span className="absolute left-4 right-4 top-0 h-px bg-[#d5b451]/25" />
@@ -452,8 +480,8 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
                 </div>
                 <div>
-                  <p className="text-sm font-black text-white">{pushEnabled ? 'Enviar teste push' : 'Ativar notificacoes'}</p>
-                  <p className="mt-0.5 text-xs text-zinc-600">Avisos da agenda</p>
+                  <p className="text-sm font-black text-white">{notificacaoLabel}</p>
+                  <p className="mt-0.5 text-xs text-zinc-600">{notificacaoSubtexto}</p>
                 </div>
               </div>
               <svg className="shrink-0 text-[#d5b451]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>

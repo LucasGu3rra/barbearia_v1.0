@@ -22,10 +22,15 @@ export const PushNotificationProvider = ({ children }) => {
   const [status, setStatus] = useState('idle');
   const userId = user?.id;
   const empresaId = empresaAtual?.id;
+  const supported = isPushSupported();
+  const configured = pushConfig.configured;
+  const visible = Boolean(userId && empresaId);
 
-  const available = Boolean(userId && empresaId && isPushSupported() && pushConfig.configured);
+  const available = Boolean(visible && supported && configured);
 
   const syncSubscription = useCallback(async ({ requestPermission = false } = {}) => {
+    setPermission(getNotificationPermission());
+
     if (!userId || !empresaId) return { ok: false, reason: 'missing-context' };
     if (!isPushSupported()) return { ok: false, reason: 'unsupported' };
     if (!pushConfig.configured) return { ok: false, reason: 'missing-key' };
@@ -94,12 +99,15 @@ export const PushNotificationProvider = ({ children }) => {
 
   const value = useMemo(() => ({
     available,
+    visible,
+    configured,
+    supported,
     enabled,
     permission,
     status,
     enablePush,
     sendTestPush,
-  }), [available, enabled, enablePush, permission, sendTestPush, status]);
+  }), [available, configured, enabled, enablePush, permission, sendTestPush, status, supported, visible]);
 
   return (
     <PushNotificationContext.Provider value={value}>

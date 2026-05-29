@@ -17,7 +17,17 @@ export default function DrawerAdmin({
   const [modalFinanceiro, setModalFinanceiro] = useState(false);
   const [configAberto, setConfigAberto] = useState(false);
   const { canInstall, installApp } = usePwaInstall();
-  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush, sendTestPush } = usePushNotifications();
+  const {
+    visible: pushVisible,
+    available: pushAvailable,
+    configured: pushConfigured,
+    supported: pushSupported,
+    enabled: pushEnabled,
+    permission: pushPermission,
+    status: pushStatus,
+    enablePush,
+    sendTestPush,
+  } = usePushNotifications();
 
   if (!isOpen) return null;
 
@@ -38,6 +48,8 @@ export default function DrawerAdmin({
   };
 
   const ativarNotificacoes = async () => {
+    if (!pushAvailable) return;
+
     if (pushEnabled) {
       await sendTestPush();
       return;
@@ -45,6 +57,22 @@ export default function DrawerAdmin({
 
     await enablePush();
   };
+
+  const notificacaoLabel = (() => {
+    if (!pushConfigured) return 'Configurar notificacoes';
+    if (!pushSupported) return 'Notificacoes indisponiveis';
+    if (pushPermission === 'denied' || pushStatus === 'denied') return 'Notificacoes bloqueadas';
+    if (pushEnabled) return 'Enviar teste push';
+    return 'Ativar notificacoes';
+  })();
+
+  const notificacaoSubtexto = (() => {
+    if (!pushConfigured) return 'Chave VAPID ausente';
+    if (!pushSupported) return 'Use HTTPS ou app instalado';
+    if (pushPermission === 'denied' || pushStatus === 'denied') return 'Liberar nas configuracoes';
+    if (pushEnabled) return 'Enviar para este aparelho';
+    return 'Avisos do sistema';
+  })();
 
   return (
     <>
@@ -91,18 +119,18 @@ export default function DrawerAdmin({
             </button>
           )}
 
-          {pushAvailable && (
+          {pushVisible && (
             <button
               onClick={ativarNotificacoes}
-              disabled={['saving', 'testing'].includes(pushStatus)}
+              disabled={!pushAvailable || ['saving', 'testing'].includes(pushStatus) || pushPermission === 'denied'}
               className="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group disabled:opacity-60"
             >
               <div className="w-10 h-10 rounded-xl bg-[#CEAA6B]/10 flex items-center justify-center text-[#CEAA6B] group-hover:bg-[#CEAA6B] group-hover:text-black transition-all">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
               </div>
               <div className="text-left">
-                <span className="block font-bold text-sm">{pushEnabled ? 'Enviar teste push' : 'Ativar notificacoes'}</span>
-                <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">Avisos do sistema</span>
+                <span className="block font-bold text-sm">{notificacaoLabel}</span>
+                <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">{notificacaoSubtexto}</span>
               </div>
             </button>
           )}
