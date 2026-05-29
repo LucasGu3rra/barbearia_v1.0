@@ -63,6 +63,7 @@ export default function DrawerClientes({
     status: pushStatus,
     enablePush,
     sendTestPush,
+    sendDelayedTestPush,
   } = usePushNotifications();
 
   if (!dados) return null;
@@ -81,6 +82,11 @@ export default function DrawerClientes({
     }
 
     await enablePush();
+  };
+
+  const testarNotificacaoAtrasada = async () => {
+    if (!pushAvailable || !pushEnabled) return;
+    await sendDelayedTestPush();
   };
 
   const notificacaoLabel = (() => {
@@ -187,10 +193,19 @@ export default function DrawerClientes({
               {pushVisible && (
                 <MenuButton
                   onClick={ativarNotificacoes}
-                  disabled={!pushAvailable || ['saving', 'testing'].includes(pushStatus) || pushPermission === 'denied'}
+                  disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus) || pushPermission === 'denied'}
                   badge={notificacaoBadge}
                 >
                   {notificacaoLabel}
+                </MenuButton>
+              )}
+              {pushVisible && pushEnabled && (
+                <MenuButton
+                  onClick={testarNotificacaoAtrasada}
+                  disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus)}
+                  badge="1 min"
+                >
+                  Teste push em 1 min
                 </MenuButton>
               )}
             </div>

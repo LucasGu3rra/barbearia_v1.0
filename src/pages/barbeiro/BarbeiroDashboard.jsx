@@ -347,6 +347,7 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
     status: pushStatus,
     enablePush,
     sendTestPush,
+    sendDelayedTestPush,
   } = usePushNotifications();
 
   if (!isOpen) return null;
@@ -365,6 +366,11 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
     }
 
     await enablePush();
+  };
+
+  const testarNotificacaoAtrasada = async () => {
+    if (!pushAvailable || !pushEnabled) return;
+    await sendDelayedTestPush();
   };
 
   const notificacaoLabel = (() => {
@@ -471,7 +477,7 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
             <button
               type="button"
               onClick={ativarNotificacoes}
-              disabled={!pushAvailable || ['saving', 'testing'].includes(pushStatus) || pushPermission === 'denied'}
+              disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus) || pushPermission === 'denied'}
               className="relative flex w-full items-center justify-between rounded-[18px] bg-[#101011] px-4 py-3.5 text-left active:scale-[0.99] disabled:opacity-60"
             >
               <span className="absolute left-4 right-4 top-0 h-px bg-[#d5b451]/25" />
@@ -482,6 +488,26 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
                 <div>
                   <p className="text-sm font-black text-white">{notificacaoLabel}</p>
                   <p className="mt-0.5 text-xs text-zinc-600">{notificacaoSubtexto}</p>
+                </div>
+              </div>
+              <svg className="shrink-0 text-[#d5b451]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
+            </button>
+          )}
+          {pushVisible && pushEnabled && (
+            <button
+              type="button"
+              onClick={testarNotificacaoAtrasada}
+              disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus)}
+              className="relative flex w-full items-center justify-between rounded-[18px] bg-[#101011] px-4 py-3.5 text-left active:scale-[0.99] disabled:opacity-60"
+            >
+              <span className="absolute left-4 right-4 top-0 h-px bg-[#d5b451]/25" />
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#d5b451]/10 text-[#d5b451]">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                </div>
+                <div>
+                  <p className="text-sm font-black text-white">Teste push em 1 min</p>
+                  <p className="mt-0.5 text-xs text-zinc-600">Feche o app apos clicar</p>
                 </div>
               </div>
               <svg className="shrink-0 text-[#d5b451]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
