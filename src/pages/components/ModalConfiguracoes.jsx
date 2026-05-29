@@ -15,6 +15,8 @@ export default function ModalConfiguracoes({ isOpen, onClose, onRefresh, onConfi
   const [totalFiliaisAtivas, setTotalFiliaisAtivas] = useState(0);
   const [totalBarbeirosAtivos, setTotalBarbeirosAtivos] = useState(0);
   const [agendamentoAtivo, setAgendamentoAtivo] = useState(false);
+  const [prazoCancelamentoMinutos, setPrazoCancelamentoMinutos] = useState(120);
+  const [configFluxo, setConfigFluxo] = useState({});
 
   // Estados do Expediente
   const [listaFiliais, setListaFiliais] = useState([]);
@@ -47,7 +49,18 @@ export default function ModalConfiguracoes({ isOpen, onClose, onRefresh, onConfi
       setListaFiliais(filiaisAtivas);
 
       if (config?.valor) {
-        setAgendamentoAtivo(config.valor.agendamento_ativo ?? false);
+        const valorConfig = config.valor || {};
+        setConfigFluxo(valorConfig);
+        setAgendamentoAtivo(valorConfig.agendamento_ativo ?? false);
+        setPrazoCancelamentoMinutos(Number(
+          valorConfig.prazo_cancelamento_minutos
+          ?? valorConfig.cancelamento_minutos
+          ?? 120
+        ));
+      } else {
+        setConfigFluxo({});
+        setAgendamentoAtivo(false);
+        setPrazoCancelamentoMinutos(120);
       }
 
       if (filiaisAtivas.length > 0) {
@@ -112,7 +125,14 @@ export default function ModalConfiguracoes({ isOpen, onClose, onRefresh, onConfi
   // PONTE IMEDIATA: Atualiza na hora o Dashboard (Optimistic UI) 0ms de espera.
   const toggleAgendamento = async () => {
     const novoValor = !agendamentoAtivo;
+    const prazo = Math.max(0, parseInt(prazoCancelamentoMinutos, 10) || 0);
+    const novoConfig = {
+      ...configFluxo,
+      agendamento_ativo: novoValor,
+      prazo_cancelamento_minutos: prazo,
+    };
     setAgendamentoAtivo(novoValor);
+    setConfigFluxo(novoConfig);
     
     // Grita pro AdminDashboard que mudou antes do banco salvar!
     if (onConfigChange) onConfigChange(novoValor);
@@ -123,7 +143,7 @@ export default function ModalConfiguracoes({ isOpen, onClose, onRefresh, onConfi
         .upsert({
           chave: 'fluxo_agendamento',
           empresa_id: empresaId,
-          valor: { agendamento_ativo: novoValor },
+          valor: novoConfig,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'empresa_id,chave' });
 
@@ -135,6 +155,7 @@ export default function ModalConfiguracoes({ isOpen, onClose, onRefresh, onConfi
     } catch (e) {
       console.error(e);
       setAgendamentoAtivo(!novoValor);
+      setConfigFluxo(configFluxo);
       if (onConfigChange) onConfigChange(!novoValor); // Reverte se der erro na internet
       setErro('Erro ao ligar/desligar agendamento.');
     }
@@ -148,6 +169,24 @@ export default function ModalConfiguracoes({ isOpen, onClose, onRefresh, onConfi
     setSalvando(true);
     setErro('');
     try {
+      const prazo = Math.max(0, parseInt(prazoCancelamentoMinutos, 10) || 0);
+      const novoConfig = {
+        ...configFluxo,
+        agendamento_ativo: agendamentoAtivo,
+        prazo_cancelamento_minutos: prazo,
+      };
+
+      const { error: configError } = await supabase
+        .from('configuracoes')
+        .upsert({
+          chave: 'fluxo_agendamento',
+          empresa_id: empresaId,
+          valor: novoConfig,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'empresa_id,chave' });
+      if (configError) throw configError;
+      setConfigFluxo(novoConfig);
+
       if (filialSelecionada) {
         for (let i = 0; i < 7; i++) {
           const isAberto = diasAtivos.includes(i);
@@ -225,6 +264,28 @@ export default function ModalConfiguracoes({ isOpen, onClose, onRefresh, onConfi
                     <span className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${agendamentoAtivo ? 'translate-x-5' : 'translate-x-0'}`} />
                   </button>
                 </div>
+              </div>
+
+              <div className="bg-[#121212] border border-[#27272a] rounded-2xl p-4">
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <label className="text-[9px] text-zinc-500 uppercase tracking-widest ml-1 mb-1 block">
+                      Prazo para cancelamento
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={prazoCancelamentoMinutos}
+                      onChange={(e) => setPrazoCancelamentoMinutos(e.target.value)}
+                      className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-3 py-2.5 text-white text-sm font-bold outline-none focus:border-[#CEAA6B]/50 transition-colors"
+                    />
+                  </div>
+                  <span className="mb-3 text-[10px] font-black uppercase tracking-widest text-[#CEAA6B]">min</span>
+                </div>
+                <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">
+                  Clientes podem cancelar somente antes desse limite. Depois disso o horario continua ocupado.
+                </p>
               </div>
 
               <div className="flex items-center gap-3 py-1">

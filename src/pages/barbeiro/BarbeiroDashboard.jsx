@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/useAuth';
 import { usePwaInstall } from '../../contexts/usePwaInstall';
 import { usePushNotifications } from '../../contexts/usePushNotifications';
 import { montarRotaEmpresa } from '../../services/empresa';
+import {
+  carregarNotificacoesCache,
+  limparNotificacoesCache,
+  mesclarNotificacoesCache,
+} from '../../services/notificationCache';
 import { supabase } from '../../services/supabase';
+import NotificacoesModal from '../components/NotificacoesModal';
 
 const statusVisual = {
   agendado: 'bg-[#d5b451]/10 text-[#d5b451] border-[#d5b451]/20',
@@ -554,6 +560,67 @@ export default function BarbeiroDashboard() {
   const [perfilAberto, setPerfilAberto] = useState(false);
   const [agendaAnimacaoId, setAgendaAnimacaoId] = useState(0);
   const [atualizadoAgora, setAtualizadoAgora] = useState(false);
+  const [notificacoesAberto, setNotificacoesAberto] = useState(false);
+  const [notificacoes, setNotificacoes] = useState([]);
+  const [limpandoNotificacoes, setLimpandoNotificacoes] = useState(false);
+  const empresaId = empresaAtual?.id;
+  const userId = user?.id;
+
+  const carregarNotificacoes = useCallback(async () => {
+    if (!empresaId || !userId) return;
+
+    const notificacoesCache = carregarNotificacoesCache({ empresaId, userId });
+    setNotificacoes(notificacoesCache);
+
+    const duasHorasAtras = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('notificacoes')
+      .select('id, titulo, corpo, tipo, dados, created_at')
+      .eq('empresa_id', empresaId)
+      .eq('user_id', userId)
+      .eq('lida', false)
+      .gte('created_at', duasHorasAtras)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (error) {
+      console.error('Erro ao carregar notificacoes:', error);
+      return;
+    }
+
+    if (!data?.length) return;
+
+    const notificacoesMescladas = mesclarNotificacoesCache({ empresaId, userId, notificacoes: data });
+    setNotificacoes(notificacoesMescladas);
+
+    await supabase
+      .from('notificacoes')
+      .delete()
+      .eq('empresa_id', empresaId)
+      .eq('user_id', userId)
+      .in('id', data.map((notificacao) => notificacao.id));
+  }, [empresaId, userId]);
+
+  const abrirNotificacoes = async () => {
+    await carregarNotificacoes();
+    setNotificacoesAberto(true);
+  };
+
+  const limparNotificacoes = async () => {
+    if (!empresaId || !userId || notificacoes.length === 0) return;
+    setLimpandoNotificacoes(true);
+    limparNotificacoesCache({ empresaId, userId });
+    setNotificacoes([]);
+
+    const { error } = await supabase
+      .from('notificacoes')
+      .delete()
+      .eq('empresa_id', empresaId)
+      .eq('user_id', userId);
+
+    if (error) console.error('Erro ao limpar notificacoes:', error);
+    setLimpandoNotificacoes(false);
+  };
 
   useEffect(() => {
     let ativo = true;
@@ -566,6 +633,8 @@ export default function BarbeiroDashboard() {
 
       const inicio = inicioDoDia(dataSelecionada).toISOString();
       const fim = fimDoDia(dataSelecionada).toISOString();
+
+      await supabase.rpc('finalizar_agendamentos_vencidos', { p_empresa_id: empresaAtual.id });
 
       const [{ data: dadosBarbeiro }, { data: dadosAgenda }] = await Promise.all([
         supabase
@@ -615,6 +684,10 @@ export default function BarbeiroDashboard() {
     };
   }, [dataSelecionada, empresaAtual, user]);
 
+  useEffect(() => {
+    Promise.resolve().then(() => carregarNotificacoes());
+  }, [carregarNotificacoes]);
+
   const proximosDias = useMemo(() => (
     Array.from({ length: 7 }, (_, index) => {
       const data = inicioDoDia(new Date());
@@ -626,6 +699,7 @@ export default function BarbeiroDashboard() {
   const agora = new Date();
   const proximoAgendamento = agendamentos.find((item) => new Date(item.data_hora) >= agora) || agendamentos[0] || null;
   const totalFinalizados = agendamentos.filter((item) => ['finalizado', 'concluido'].includes(String(item.status || '').toLowerCase())).length;
+  const totalNotificacoes = notificacoes.length;
 
   if (empresaAtual && empresaAtual.slug !== empresaSlug) return null;
   if (papelEmpresa && papelEmpresa !== 'barbeiro') {
@@ -643,14 +717,29 @@ export default function BarbeiroDashboard() {
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#d5b451]">Agenda do barbeiro</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setDrawerAberto(true)}
-            className="ml-3 flex h-10 w-10 items-center justify-center rounded-full border border-[#27272a] bg-[#121212] text-zinc-400"
-            aria-label="Abrir menu"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
-          </button>
+          <div className="ml-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={abrirNotificacoes}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full border border-[#27272a] bg-[#121212] text-zinc-400"
+              aria-label="Abrir notificacoes"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+              {totalNotificacoes > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#d5b451] px-1 text-[10px] font-black text-black">
+                  {totalNotificacoes > 9 ? '9+' : totalNotificacoes}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDrawerAberto(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-[#27272a] bg-[#121212] text-zinc-400"
+              aria-label="Abrir menu"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
+            </button>
+          </div>
         </header>
 
         {loading ? (
@@ -783,6 +872,13 @@ export default function BarbeiroDashboard() {
       </main>
 
       <AgendamentoDetalhesModal agendamento={agendamentoAberto} onClose={() => setAgendamentoAberto(null)} />
+      <NotificacoesModal
+        isOpen={notificacoesAberto}
+        onClose={() => setNotificacoesAberto(false)}
+        notificacoes={notificacoes}
+        onLimpar={limparNotificacoes}
+        limpando={limpandoNotificacoes}
+      />
       <BarbeiroDrawer
         isOpen={drawerAberto}
         onClose={() => setDrawerAberto(false)}
