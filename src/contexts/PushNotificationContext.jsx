@@ -64,13 +64,42 @@ export const PushNotificationProvider = ({ children }) => {
     }
   }, [syncSubscription]);
 
+  const sendTestPush = useCallback(async () => {
+    if (!empresaId) return { ok: false, reason: 'missing-context' };
+
+    setStatus('testing');
+
+    const { data, error } = await supabase.functions.invoke('enviar-push', {
+      body: {
+        action: 'self_test',
+        empresa_id: empresaId,
+        titulo: 'Notificacoes ativadas',
+        corpo: 'Este aparelho ja pode receber avisos da barbearia.',
+        tipo: 'teste_push',
+        dados: {
+          url: window.location.pathname || '/',
+        },
+      },
+    });
+
+    if (error) {
+      console.error('Erro ao enviar notificacao de teste:', error);
+      setStatus('error');
+      return { ok: false, reason: 'error', error };
+    }
+
+    setStatus('enabled');
+    return data || { ok: true };
+  }, [empresaId]);
+
   const value = useMemo(() => ({
     available,
     enabled,
     permission,
     status,
     enablePush,
-  }), [available, enabled, enablePush, permission, status]);
+    sendTestPush,
+  }), [available, enabled, enablePush, permission, sendTestPush, status]);
 
   return (
     <PushNotificationContext.Provider value={value}>

@@ -337,7 +337,7 @@ function BarbeiroPerfilModal({ isOpen, onClose, barbeiro, user }) {
 
 function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfil }) {
   const { canInstall, installApp } = usePwaInstall();
-  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush } = usePushNotifications();
+  const { available: pushAvailable, enabled: pushEnabled, status: pushStatus, enablePush, sendTestPush } = usePushNotifications();
 
   if (!isOpen) return null;
 
@@ -347,6 +347,11 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
     onClose();
   };
   const ativarNotificacoes = async () => {
+    if (pushEnabled) {
+      await sendTestPush();
+      return;
+    }
+
     await enablePush();
   };
 
@@ -438,7 +443,7 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
             <button
               type="button"
               onClick={ativarNotificacoes}
-              disabled={pushStatus === 'saving'}
+              disabled={['saving', 'testing'].includes(pushStatus)}
               className="relative flex w-full items-center justify-between rounded-[18px] bg-[#101011] px-4 py-3.5 text-left active:scale-[0.99] disabled:opacity-60"
             >
               <span className="absolute left-4 right-4 top-0 h-px bg-[#d5b451]/25" />
@@ -447,7 +452,7 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
                 </div>
                 <div>
-                  <p className="text-sm font-black text-white">{pushEnabled ? 'Notificacoes ativas' : 'Ativar notificacoes'}</p>
+                  <p className="text-sm font-black text-white">{pushEnabled ? 'Enviar teste push' : 'Ativar notificacoes'}</p>
                   <p className="mt-0.5 text-xs text-zinc-600">Avisos da agenda</p>
                 </div>
               </div>
