@@ -1,4 +1,3 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 
@@ -15,7 +14,8 @@ type PushBody = {
   corpo?: string;
   tipo?: string;
   dados?: Record<string, unknown>;
-  action?: "self_test" | "send";
+  action?: "self_test" | "self_test_delayed" | "send";
+  delay_seconds?: number;
 };
 
 const jsonResponse = (body: unknown, status = 200) => (
@@ -27,6 +27,79 @@ const jsonResponse = (body: unknown, status = 200) => (
     },
   })
 );
+
+const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+const enviarParaDispositivos = async ({
+  supabaseAdmin,
+  subscriptions,
+  targetUserIds,
+  empresaId,
+  titulo,
+  corpo,
+  tipo,
+  dados,
+}: {
+  supabaseAdmin: ReturnType<typeof createClient>;
+  subscriptions: Array<{ id: string; endpoint: string; p256dh: string; auth: string }>;
+  targetUserIds: string[];
+  empresaId: string;
+  titulo: string;
+  corpo: string;
+  tipo: string;
+  dados: Record<string, unknown>;
+}) => {
+  await supabaseAdmin.from("notificacoes").insert(
+    targetUserIds.map((userId) => ({
+      empresa_id: empresaId,
+      user_id: userId,
+      titulo,
+      corpo,
+      tipo,
+      dados,
+    })),
+  );
+
+  const payload = JSON.stringify({
+    title: titulo,
+    body: corpo,
+    tag: tipo,
+    data: dados,
+  });
+
+  const results = await Promise.allSettled(subscriptions.map(async (subscription) => {
+    try {
+      await webpush.sendNotification({
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: subscription.p256dh,
+          auth: subscription.auth,
+        },
+      }, payload);
+      return { id: subscription.id, ok: true };
+    } catch (error) {
+      const statusCode = typeof error === "object" && error && "statusCode" in error
+        ? Number((error as { statusCode?: number }).statusCode)
+        : 0;
+
+      if ([404, 410].includes(statusCode)) {
+        await supabaseAdmin
+          .from("push_subscriptions")
+          .update({ enabled: false, updated_at: new Date().toISOString() })
+          .eq("id", subscription.id);
+      }
+
+      return { id: subscription.id, ok: false, statusCode };
+    }
+  }));
+
+  const sent = results.filter((result) => result.status === "fulfilled" && result.value.ok).length;
+
+  return {
+    sent,
+    failed: results.length - sent,
+  };
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -87,11 +160,11 @@ Deno.serve(async (req) => {
   }
 
   const isAdmin = ["dono", "admin"].includes(vinculo.papel);
-  const targetUserIds = action === "self_test"
+  const targetUserIds = ["self_test", "self_test_delayed"].includes(action)
     ? [authData.user.id]
     : [...new Set(body.target_user_ids || [])].slice(0, 50);
 
-  if (action !== "self_test" && !isAdmin) {
+  if (!["self_test", "self_test_delayed"].includes(action) && !isAdmin) {
     return jsonResponse({ error: "Apenas administradores podem enviar para terceiros." }, 403);
   }
 
@@ -117,57 +190,49 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Erro ao buscar dispositivos." }, 500);
   }
 
-  await supabaseAdmin.from("notificacoes").insert(
-    targetUserIds.map((userId) => ({
-      empresa_id: empresaId,
-      user_id: userId,
-      titulo,
-      corpo,
-      tipo,
-      dados,
-    })),
-  );
+  const dispositivos = subscriptions || [];
 
-  const payload = JSON.stringify({
-    title: titulo,
-    body: corpo,
-    tag: tipo,
-    data: dados,
+  if (action === "self_test_delayed") {
+    const delaySeconds = Math.min(Math.max(Number(body.delay_seconds || 60), 10), 300);
+
+    (globalThis as typeof globalThis & { EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void } }).EdgeRuntime.waitUntil((async () => {
+      await sleep(delaySeconds * 1000);
+      await enviarParaDispositivos({
+        supabaseAdmin,
+        subscriptions: dispositivos,
+        targetUserIds,
+        empresaId,
+        titulo,
+        corpo,
+        tipo,
+        dados,
+      });
+    })());
+
+    return jsonResponse({
+      ok: true,
+      scheduled: true,
+      delay_seconds: delaySeconds,
+      targeted_users: targetUserIds.length,
+      devices: dispositivos.length,
+    });
+  }
+
+  const { sent, failed } = await enviarParaDispositivos({
+    supabaseAdmin,
+    subscriptions: dispositivos,
+    targetUserIds,
+    empresaId,
+    titulo,
+    corpo,
+    tipo,
+    dados,
   });
-
-  const results = await Promise.allSettled((subscriptions || []).map(async (subscription) => {
-    try {
-      await webpush.sendNotification({
-        endpoint: subscription.endpoint,
-        keys: {
-          p256dh: subscription.p256dh,
-          auth: subscription.auth,
-        },
-      }, payload);
-      return { id: subscription.id, ok: true };
-    } catch (error) {
-      const statusCode = typeof error === "object" && error && "statusCode" in error
-        ? Number((error as { statusCode?: number }).statusCode)
-        : 0;
-
-      if ([404, 410].includes(statusCode)) {
-        await supabaseAdmin
-          .from("push_subscriptions")
-          .update({ enabled: false, updated_at: new Date().toISOString() })
-          .eq("id", subscription.id);
-      }
-
-      return { id: subscription.id, ok: false, statusCode };
-    }
-  }));
-
-  const sent = results.filter((result) => result.status === "fulfilled" && result.value.ok).length;
-  const failed = results.length - sent;
 
   return jsonResponse({
     ok: true,
     targeted_users: targetUserIds.length,
-    devices: subscriptions?.length || 0,
+    devices: dispositivos.length,
     sent,
     failed,
   });

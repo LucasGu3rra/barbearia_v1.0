@@ -1,4 +1,5 @@
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+const DEFAULT_VAPID_PUBLIC_KEY = 'BNxF0xddanrO_fbeURidqN2lHPsfABHzsO9RNPRkAsLtMVzA9bAXNlsFgPZRH1RgXECjDoDIswbE2r4il1WXzoY';
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY;
 
 const urlBase64ToUint8Array = (base64String) => {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);

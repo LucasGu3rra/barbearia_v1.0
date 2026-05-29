@@ -27,6 +27,7 @@ export default function DrawerAdmin({
     status: pushStatus,
     enablePush,
     sendTestPush,
+    sendDelayedTestPush,
   } = usePushNotifications();
 
   if (!isOpen) return null;
@@ -56,6 +57,11 @@ export default function DrawerAdmin({
     }
 
     await enablePush();
+  };
+
+  const testarNotificacaoAtrasada = async () => {
+    if (!pushAvailable || !pushEnabled) return;
+    await sendDelayedTestPush();
   };
 
   const notificacaoLabel = (() => {
@@ -122,7 +128,7 @@ export default function DrawerAdmin({
           {pushVisible && (
             <button
               onClick={ativarNotificacoes}
-              disabled={!pushAvailable || ['saving', 'testing'].includes(pushStatus) || pushPermission === 'denied'}
+              disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus) || pushPermission === 'denied'}
               className="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group disabled:opacity-60"
             >
               <div className="w-10 h-10 rounded-xl bg-[#CEAA6B]/10 flex items-center justify-center text-[#CEAA6B] group-hover:bg-[#CEAA6B] group-hover:text-black transition-all">
@@ -131,6 +137,22 @@ export default function DrawerAdmin({
               <div className="text-left">
                 <span className="block font-bold text-sm">{notificacaoLabel}</span>
                 <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">{notificacaoSubtexto}</span>
+              </div>
+            </button>
+          )}
+
+          {pushVisible && pushEnabled && (
+            <button
+              onClick={testarNotificacaoAtrasada}
+              disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus)}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B] hover:bg-[#18181b] transition-all group disabled:opacity-60"
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#CEAA6B]/10 flex items-center justify-center text-[#CEAA6B] group-hover:bg-[#CEAA6B] group-hover:text-black transition-all">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              </div>
+              <div className="text-left">
+                <span className="block font-bold text-sm">Teste push em 1 min</span>
+                <span className="block text-[10px] text-zinc-500 uppercase tracking-wider">Feche o app apos clicar</span>
               </div>
             </button>
           )}
