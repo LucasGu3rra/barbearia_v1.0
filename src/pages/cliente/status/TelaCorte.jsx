@@ -27,7 +27,7 @@ export default function TelaCorte() {
 
   const carregarDadosValidacao = useCallback(async () => {
     setAgoraMs(new Date().getTime());
-    const id = user?.id || localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
+    const id = user?.id;
 
     if (!id) {
       navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');

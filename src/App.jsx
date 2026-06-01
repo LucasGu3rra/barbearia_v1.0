@@ -176,12 +176,12 @@ export default function App() {
               <Route path="/:empresaSlug/cadastro" element={<EmpresaAtivaRoute><ClienteCadastro /></EmpresaAtivaRoute>} />
               <Route path="/:empresaSlug/esqueci-senha" element={<EmpresaAtivaRoute><EsqueciSenha /></EmpresaAtivaRoute>} />
               <Route path="/:empresaSlug/redefinir-senha" element={<EmpresaAtivaRoute><RedefinirSenha /></EmpresaAtivaRoute>} />
-              <Route path="/:empresaSlug/planos" element={<EmpresaAtivaRoute><EscolhaPlano /></EmpresaAtivaRoute>} />
-              <Route path="/:empresaSlug/admin/dashboard" element={<EmpresaAtivaRoute><ProtectedRoute><AdminDashboard /></ProtectedRoute></EmpresaAtivaRoute>} />
-              <Route path="/:empresaSlug/barbeiro/dashboard" element={<EmpresaAtivaRoute><ProtectedRoute><BarbeiroDashboard /></ProtectedRoute></EmpresaAtivaRoute>} />
-              <Route path="/:empresaSlug/dashboard" element={<EmpresaAtivaRoute><ProtectedRoute><ClienteDashboard /></ProtectedRoute></EmpresaAtivaRoute>} />
-              <Route path="/:empresaSlug/confirmado" element={<EmpresaAtivaRoute><ProtectedRoute><TelaCorte /></ProtectedRoute></EmpresaAtivaRoute>} />
-              <Route path="/:empresaSlug/bloqueado" element={<EmpresaAtivaRoute><ProtectedRoute><TelaBloqueio /></ProtectedRoute></EmpresaAtivaRoute>} />
+              <Route path="/:empresaSlug/planos" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['cliente']}><EscolhaPlano /></ProtectedRoute></EmpresaAtivaRoute>} />
+              <Route path="/:empresaSlug/admin/dashboard" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['dono', 'admin']}><AdminDashboard /></ProtectedRoute></EmpresaAtivaRoute>} />
+              <Route path="/:empresaSlug/barbeiro/dashboard" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['barbeiro']}><BarbeiroDashboard /></ProtectedRoute></EmpresaAtivaRoute>} />
+              <Route path="/:empresaSlug/dashboard" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['cliente']}><ClienteDashboard /></ProtectedRoute></EmpresaAtivaRoute>} />
+              <Route path="/:empresaSlug/confirmado" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['cliente']}><TelaCorte /></ProtectedRoute></EmpresaAtivaRoute>} />
+              <Route path="/:empresaSlug/bloqueado" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['cliente']}><TelaBloqueio /></ProtectedRoute></EmpresaAtivaRoute>} />
               <Route path="*" element={<AcessoPorLink />} />
             </Routes>
           </BrowserRouter>

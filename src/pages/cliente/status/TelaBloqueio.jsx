@@ -15,7 +15,7 @@ export default function TelaBloqueio() {
   const [dados, setDados] = useState({ nome: '', iniciais: '', vencimento: '' });
 
   const carregarDados = useCallback(async () => {
-    const id = user?.id || localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
+    const id = user?.id;
     if (!id) return;
 
     // Busca o nome do cliente e a data de vencimento real da assinatura no Supabase

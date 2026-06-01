@@ -47,8 +47,13 @@ export default function ClienteLogin() {
           throw new Error('Essa conta nao pertence a esta barbearia.');
         }
 
-        localStorage.setItem('clienteId', userId);
-        sessionStorage.setItem('clienteId', userId);
+        if (vinculo.papel === 'cliente') {
+          localStorage.setItem('clienteId', userId);
+          sessionStorage.setItem('clienteId', userId);
+        } else {
+          localStorage.removeItem('clienteId');
+          sessionStorage.removeItem('clienteId');
+        }
       }
 
       if (lembrarEmail) {

@@ -46,7 +46,7 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [planosInfo, setPlanosInfo] = useState({});
   
-  const [abaAtiva, setAbaAtiva] = useState('todos'); 
+  const [abaAtiva, setAbaAtiva] = useState('agenda'); 
   const [filtroAgenda, setFiltroAgenda] = useState('agendados');
   const [busca, setBusca] = useState('');
   
@@ -198,7 +198,7 @@ export default function AdminDashboard() {
       const { data: dadosAgendamentos, error: errAgendamentos } = await supabase
         .from('agendamentos')
         .select(`
-          id, data_hora, status, tipo_cliente, created_at,
+          id, data_hora, status, tipo_cliente, created_at, cliente_id,
           clientes ( nome, whatsapp ),
           servicos ( nome, preco, duracao_minutos ),
           barbeiros ( nome )
@@ -260,7 +260,10 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!agendamentoAtivo && abaAtiva === 'agenda') {
-      setAbaAtiva('todos');
+      setAbaAtiva('historico');
+    }
+    if (!agendamentoAtivo && abaAtiva === 'avulsos') {
+      setAbaAtiva('ativos');
     }
   }, [agendamentoAtivo, abaAtiva]);
 
@@ -376,23 +379,86 @@ export default function AdminDashboard() {
 
   const mesAtual = new Date().getMonth();
   const anoAtual = new Date().getFullYear();
+  const hojeInicio = new Date();
+  hojeInicio.setHours(0, 0, 0, 0);
+  const hojeFim = new Date(hojeInicio);
+  hojeFim.setHours(23, 59, 59, 999);
+  const limiteVencimento = new Date(hojeInicio);
+  limiteVencimento.setDate(limiteVencimento.getDate() + 7);
+
+  const classificarCliente = (assinaturas = []) => {
+    const pendente = assinaturas.find(a => a.status === 'pendente');
+    if (pendente) return { assinatura: pendente, classificacao: 'pendente' };
+
+    const ativa = assinaturas.find(a => a.status === 'ativa');
+    if (ativa) {
+      const vencimento = ativa.data_vencimento ? new Date(ativa.data_vencimento) : null;
+      if (vencimento && vencimento < hojeInicio) return { assinatura: ativa, classificacao: 'inativo' };
+      if (vencimento && vencimento <= limiteVencimento) return { assinatura: ativa, classificacao: 'vencendo' };
+      return { assinatura: ativa, classificacao: 'ativo' };
+    }
+
+    const ultima = [...assinaturas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || null;
+    if (ultima) return { assinatura: ultima, classificacao: 'inativo' };
+    return { assinatura: null, classificacao: 'avulso' };
+  };
 
   const clientesProcessados = clientes.map(cliente => {
     const todasAssinaturas = cliente.assinaturas || [];
-    const assinatura = todasAssinaturas.find(a => a.status === 'ativa') || 
-                       todasAssinaturas.find(a => a.status === 'pendente') || 
-                       [...todasAssinaturas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || null;
+    const { assinatura, classificacao } = classificarCliente(todasAssinaturas);
 
     const planoDetalhe = assinatura ? planosInfo[assinatura.plano_escolhido] : null;
 
-    const cortesNoMes = cortesGerais.filter(corte => {
+    const cortesHistoricoMes = cortesGerais.filter(corte => {
       const ehDesteCliente = corte.cliente_id === cliente.id && String(corte.status || 'feito').toLowerCase() !== 'cancelado';
       const dataCorte = new Date(corte.created_at);
       return ehDesteCliente && dataCorte.getMonth() === mesAtual && dataCorte.getFullYear() === anoAtual;
-    }).length;
+    });
 
-    return { ...cliente, assinatura, planoDetalhe, cortesNoMes };
+    const agendamentosValidosCliente = agenda.filter(agendamento => {
+      const status = String(agendamento.status || '').toLowerCase();
+      return agendamento.cliente_id === cliente.id && !['cancelado', 'cancelada'].includes(status);
+    });
+
+    const agendamentosValidosMes = agendamentosValidosCliente.filter(agendamento => {
+      const dataAgendamento = new Date(agendamento.data_hora || agendamento.created_at);
+      return dataAgendamento.getMonth() === mesAtual && dataAgendamento.getFullYear() === anoAtual;
+    });
+
+    const ultimoServicoHistorico = cortesGerais.find(corte => {
+      return corte.cliente_id === cliente.id && String(corte.status || 'feito').toLowerCase() !== 'cancelado';
+    }) || null;
+
+    const ultimoServicoAgendamento = agendamentosValidosCliente
+      .filter(agendamento => agendamento.data_hora || agendamento.created_at)
+      .sort((a, b) => new Date(b.data_hora || b.created_at) - new Date(a.data_hora || a.created_at))[0] || null;
+
+    const ultimoServico = (() => {
+      if (!ultimoServicoHistorico) return ultimoServicoAgendamento;
+      if (!ultimoServicoAgendamento) return ultimoServicoHistorico;
+      const dataHistorico = new Date(ultimoServicoHistorico.created_at);
+      const dataAgendamento = new Date(ultimoServicoAgendamento.data_hora || ultimoServicoAgendamento.created_at);
+      return dataAgendamento > dataHistorico ? ultimoServicoAgendamento : ultimoServicoHistorico;
+    })();
+
+    const servicosNoMes = cortesHistoricoMes.length + agendamentosValidosMes.length;
+
+    return {
+      ...cliente,
+      assinatura,
+      planoDetalhe,
+      cortesNoMes: cortesHistoricoMes.length,
+      servicosNoMes,
+      ultimoServico,
+      classificacao,
+    };
   });
+
+  const clientesAtivos = clientesProcessados.filter(c => c.classificacao === 'ativo');
+  const clientesPendentes = clientesProcessados.filter(c => c.classificacao === 'pendente');
+  const clientesVencendo = clientesProcessados.filter(c => c.classificacao === 'vencendo');
+  const clientesInativos = clientesProcessados.filter(c => c.classificacao === 'inativo');
+  const clientesAvulsos = clientesProcessados.filter(c => c.classificacao === 'avulso');
 
   const aguardandoAtivacao = [];
   clientes.forEach(cliente => {
@@ -406,7 +472,7 @@ export default function AdminDashboard() {
     let faturamentoMensal = 0;
     let previsaoProximoMes = 0;
     clientesProcessados.forEach(cliente => {
-      if (cliente.assinatura?.status === 'ativa' && cliente.planoDetalhe) {
+      if (['ativo', 'vencendo'].includes(cliente.classificacao) && cliente.planoDetalhe) {
         const valor = parseFloat(cliente.planoDetalhe.preco.replace('R$ ', '').replace('.', '').replace(',', '.'));
         faturamentoMensal += valor;
         previsaoProximoMes += valor;
@@ -426,11 +492,15 @@ export default function AdminDashboard() {
   });
 
   if (abaAtiva === 'ativos') {
-    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.assinatura?.status === 'ativa');
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.classificacao === 'ativo');
+  } else if (abaAtiva === 'vencendo') {
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.classificacao === 'vencendo');
   } else if (abaAtiva === 'inativos') {
-    listaClientesFiltrada = listaClientesFiltrada.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa');
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.classificacao === 'inativo');
+  } else if (abaAtiva === 'avulsos') {
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.classificacao === 'avulso');
   } else if (abaAtiva === 'pendentes') {
-    listaClientesFiltrada = listaClientesFiltrada.filter(c => (c.assinaturas || []).some(a => a.status === 'pendente'));
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.classificacao === 'pendente');
   }
 
   const listaCortesFiltrada = cortesGerais.filter(corte => {
@@ -443,6 +513,10 @@ export default function AdminDashboard() {
     if (!dataFiltro || !ag.data_hora) return false;
     const d = new Date(ag.data_hora);
     return d.getDate() === dataFiltro.getDate() && d.getMonth() === dataFiltro.getMonth() && d.getFullYear() === dataFiltro.getFullYear();
+  });
+  const cortesHoje = cortesGerais.filter(corte => {
+    const dataCorte = new Date(corte.created_at);
+    return dataCorte >= hojeInicio && dataCorte <= hojeFim && String(corte.status || 'feito').toLowerCase() !== 'cancelado';
   });
   const totalAgendadosDia = listaAgendaFiltrada.filter(ag => ['agendado', 'confirmado', 'pendente'].includes(String(ag.status || '').toLowerCase())).length;
   const totalFinalizadosDia = listaAgendaFiltrada.filter(ag => ['finalizado', 'concluido'].includes(String(ag.status || '').toLowerCase())).length;
@@ -460,6 +534,99 @@ export default function AdminDashboard() {
     return partes[0].substring(0, 2).toUpperCase();
   };
 
+  const estilosCliente = {
+    ativo: {
+      label: 'Ativo',
+      border: 'border-emerald-500/30',
+      badge: 'bg-emerald-500/10 text-emerald-400',
+      icon: 'text-emerald-400',
+    },
+    vencendo: {
+      label: 'Vencendo',
+      border: 'border-[#CEAA6B]/45',
+      badge: 'bg-[#CEAA6B]/10 text-[#CEAA6B]',
+      icon: 'text-[#CEAA6B]',
+    },
+    pendente: {
+      label: 'Pendente',
+      border: 'border-[#CEAA6B]/45',
+      badge: 'bg-[#CEAA6B]/10 text-[#CEAA6B]',
+      icon: 'text-[#CEAA6B]',
+    },
+    inativo: {
+      label: 'Inativo',
+      border: 'border-red-500/30',
+      badge: 'bg-red-500/10 text-red-400',
+      icon: 'text-red-400',
+    },
+    avulso: {
+      label: 'Avulso',
+      border: 'border-sky-500/30',
+      badge: 'bg-sky-500/10 text-sky-400',
+      icon: 'text-sky-400',
+    },
+  };
+
+  const detalhePrincipalCliente = (cliente) => {
+    if (cliente.classificacao === 'avulso') {
+      return cliente.ultimoServico
+        ? `Ultimo servico: ${cliente.ultimoServico.tipo_corte || cliente.ultimoServico.servicos?.nome || 'Servico'}`
+        : 'Sem servicos registrados';
+    }
+
+    if (cliente.classificacao === 'pendente') {
+      return cliente.planoDetalhe
+        ? `${cliente.planoDetalhe.nome || 'Plano'} solicitado`
+        : 'Plano solicitado';
+    }
+
+    if (cliente.classificacao === 'inativo') {
+      return cliente.planoDetalhe
+        ? `Ultimo plano: ${cliente.planoDetalhe.nome || 'Plano'}`
+        : 'Plano inativo';
+    }
+
+    return cliente.planoDetalhe
+      ? `${cliente.planoDetalhe.ilimitado ? 'Ilimitado' : `${cliente.planoDetalhe.limite} Cortes/mês`} • ${cliente.planoDetalhe.preco}`
+      : 'Plano ativo';
+  };
+
+  const detalheUsoCliente = (cliente) => {
+    if (cliente.classificacao === 'avulso') {
+      return `${cliente.servicosNoMes || 0} servicos no mes`;
+    }
+
+    if (cliente.classificacao === 'pendente') {
+      return 'Aguardando ativacao';
+    }
+
+    if (cliente.classificacao === 'inativo') {
+      return 'Plano inativo';
+    }
+
+    if (cliente.planoDetalhe?.ilimitado) {
+      return `${cliente.cortesNoMes} cortes no mes`;
+    }
+
+    return `${cliente.cortesNoMes} de ${cliente.planoDetalhe?.limite || 0} cortes usados`;
+  };
+
+  const detalheDataCliente = (cliente) => {
+    if (cliente.classificacao === 'avulso') {
+      return cliente.ultimoServico ? formatarData(cliente.ultimoServico.data_hora || cliente.ultimoServico.created_at) : 'Sem plano';
+    }
+
+    if (cliente.classificacao === 'pendente') {
+      return `Solicitado ${formatarData(cliente.assinatura?.created_at)}`;
+    }
+
+    if (cliente.classificacao === 'inativo') {
+      return cliente.assinatura?.data_vencimento ? `Venceu ${formatarData(cliente.assinatura.data_vencimento)}` : 'Sem vencimento';
+    }
+
+    return `Vence ${formatarData(cliente.assinatura?.data_vencimento)}`;
+  };
+
   if (loading) return <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-[#CEAA6B]">Carregando painel...</div>;
 
   return (
@@ -469,7 +636,7 @@ export default function AdminDashboard() {
         isOpen={drawerOpen} 
         onClose={() => setDrawerOpen(false)} 
         onLogout={handleLogout}
-        dadosFinanceiros={{ faturamentoMensal, previsaoProximoMes, totalAtivos: clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length }}
+        dadosFinanceiros={{ faturamentoMensal, previsaoProximoMes, totalAtivos: clientesAtivos.length }}
         onOpenPlanos={() => setModalPlanosAberto(true)}
         onOpenFiliais={() => setModalFiliaisAberto(true)}
         onOpenBarbeiros={() => setModalBarbeirosAberto(true)}
@@ -536,20 +703,24 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-3 gap-1">
           <button
             type="button"
-            onClick={() => setAbaAtiva('agenda')}
-            className={`relative flex h-[58px] flex-col items-center justify-center rounded-[20px] text-[11px] font-black transition-colors ${abaAtiva === 'agenda' ? 'bg-[#2a2418] text-[#E1BF63]' : 'text-zinc-500'}`}
+            onClick={() => setAbaAtiva(agendamentoAtivo ? 'agenda' : 'historico')}
+            className={`relative flex h-[58px] flex-col items-center justify-center rounded-[20px] text-[11px] font-black transition-colors ${abaAtiva === (agendamentoAtivo ? 'agenda' : 'historico') ? 'bg-[#2a2418] text-[#E1BF63]' : 'text-zinc-500'}`}
           >
-            {novosAgendamentos > 0 && (
+            {agendamentoAtivo && novosAgendamentos > 0 && (
               <span className="absolute right-7 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#CEAA6B] px-1 text-[10px] font-black text-black shadow-[0_0_0_2px_#070707]">
                 {novosAgendamentos > 9 ? '9+' : novosAgendamentos}
               </span>
             )}
-            <svg className="mb-1" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
-            Agenda
+            {agendamentoAtivo ? (
+              <svg className="mb-1" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+            ) : (
+              <svg className="mb-1" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 11 17 15 13" /></svg>
+            )}
+            {agendamentoAtivo ? 'Agenda' : 'Cortes'}
           </button>
           <button
             type="button"
-            onClick={() => setAbaAtiva('todos')}
+            onClick={() => setAbaAtiva('ativos')}
             className={`relative flex h-[58px] flex-col items-center justify-center rounded-[20px] text-[11px] font-black transition-colors ${!['agenda', 'historico'].includes(abaAtiva) ? 'bg-[#2a2418] text-[#E1BF63]' : 'text-zinc-500 active:bg-[#141414]'}`}
           >
             {novosClientes > 0 && (
@@ -613,7 +784,7 @@ export default function AdminDashboard() {
           <div className="flex justify-between items-center mb-6 bg-[#121212] p-4 rounded-2xl border border-[#27272a]">
             <div>
               <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">
-                {abaAtiva === 'agenda' ? 'Agendamentos' : 'Historico'}
+                {abaAtiva === 'agenda' ? 'Agendamentos' : 'Cortes'}
               </p>
               <h2 className="text-[#CEAA6B] font-bold text-lg">
                 <span>
@@ -745,34 +916,95 @@ export default function AdminDashboard() {
         </div>
       ) : (
         <>
+          <section className="mb-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#CEAA6B]">Clientes</p>
+                <h2 className="mt-1 text-xl font-black leading-tight text-white">
+                  {agendamentoAtivo ? 'Planos e avulsos' : 'Controle de planos'}
+                </h2>
+              </div>
+              <span className={`mt-1 shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${agendamentoAtivo ? 'bg-emerald-500/10 text-emerald-400' : 'bg-[#CEAA6B]/10 text-[#CEAA6B]'}`}>
+                {agendamentoAtivo ? 'Agenda ativa' : 'Agenda pausada'}
+              </span>
+            </div>
+
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {!agendamentoAtivo && (
+                <div className="min-w-[92px] rounded-2xl border border-[#27272a] bg-[#121212] px-3 py-2.5">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Cortes hoje</p>
+                  <p className="mt-1 text-xl font-black text-white">{cortesHoje.length}</p>
+                </div>
+              )}
+              <div className="min-w-[76px] rounded-2xl border border-[#27272a] bg-[#121212] px-3 py-2.5">
+                <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ativos</p>
+                <p className="mt-1 text-xl font-black text-white">{clientesAtivos.length}</p>
+              </div>
+              <div className="min-w-[92px] rounded-2xl border border-[#27272a] bg-[#121212] px-3 py-2.5">
+                <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Pendentes</p>
+                <p className="mt-1 text-xl font-black text-white">{clientesPendentes.length}</p>
+              </div>
+              <div className="min-w-[88px] rounded-2xl border border-[#27272a] bg-[#121212] px-3 py-2.5">
+                <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Vencendo</p>
+                <p className="mt-1 text-xl font-black text-white">{clientesVencendo.length}</p>
+              </div>
+              <div className="min-w-[88px] rounded-2xl border border-[#27272a] bg-[#121212] px-3 py-2.5">
+                <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Inativos</p>
+                <p className="mt-1 text-xl font-black text-white">{clientesInativos.length}</p>
+              </div>
+              {agendamentoAtivo && (
+                <div className="min-w-[88px] rounded-2xl border border-[#27272a] bg-[#121212] px-3 py-2.5">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Avulsos</p>
+                  <p className="mt-1 text-xl font-black text-white">{clientesAvulsos.length}</p>
+                </div>
+              )}
+            </div>
+          </section>
+
           <div className="mb-4 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            <button
-              type="button"
-              onClick={() => setAbaAtiva('todos')}
-              className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'todos' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
-            >
-              Todos ({clientesProcessados.length})
-            </button>
             <button
               type="button"
               onClick={() => setAbaAtiva('ativos')}
               className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'ativos' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
             >
-              Ativos ({clientesProcessados.filter(c => c.assinatura?.status === 'ativa').length})
+              Ativos ({clientesAtivos.length})
             </button>
             <button
               type="button"
-              onClick={() => setAbaAtiva('inativos')}
-              className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'inativos' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
+              onClick={() => setAbaAtiva('vencendo')}
+              className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'vencendo' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
             >
-              Inativos ({clientesProcessados.filter(c => !c.assinatura || c.assinatura?.status !== 'ativa').length})
+              Vencendo ({clientesVencendo.length})
             </button>
             <button
               type="button"
               onClick={() => setAbaAtiva('pendentes')}
               className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'pendentes' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
             >
-              Pendentes ({clientesProcessados.filter(c => (c.assinaturas || []).some(a => a.status === 'pendente')).length})
+              Pendentes ({clientesPendentes.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setAbaAtiva('inativos')}
+              className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'inativos' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
+            >
+              Inativos ({clientesInativos.length})
+            </button>
+            {agendamentoAtivo && (
+              <button
+                type="button"
+                onClick={() => setAbaAtiva('avulsos')}
+                className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'avulsos' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
+              >
+                Avulsos ({clientesAvulsos.length})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setAbaAtiva('todos')}
+              className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'todos' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
+            >
+              Todos ({clientesProcessados.length})
             </button>
           </div>
 
@@ -789,11 +1021,10 @@ export default function AdminDashboard() {
 
           <div className="space-y-4">
             {listaClientesFiltrada.map(cliente => {
-              const statusAtivo = cliente.assinatura?.status === 'ativa';
-              const statusPendente = cliente.assinatura?.status === 'pendente';
+              const estilo = estilosCliente[cliente.classificacao] || estilosCliente.avulso;
               
               return (
-                <div key={cliente.id} className="bg-[#121212] border border-[#27272a] rounded-[24px] p-5">
+                <div key={cliente.id} className={`bg-[#121212] border ${estilo.border} rounded-[24px] p-5`}>
                   <div className="flex items-center gap-4 border-b border-[#27272a] pb-4 mb-4">
                     <div className="w-12 h-12 rounded-full border border-[#27272a] bg-[#09090b] flex items-center justify-center text-zinc-500 font-bold text-sm shrink-0">
                       {getIniciais(cliente.nome)}
@@ -810,28 +1041,24 @@ export default function AdminDashboard() {
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                             </button>
                           )}
-                          {statusAtivo ? (
-                            <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Ativo</span>
-                          ) : statusPendente ? (
-                            <span className="bg-[#CEAA6B]/10 text-[#CEAA6B] text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Pendente</span>
-                          ) : (
-                            <span className="bg-red-500/10 text-red-500 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">Inativo</span>
-                          )}
+                          <span className={`${estilo.badge} text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider`}>
+                            {estilo.label}
+                          </span>
                         </div>
                       </div>
                       <p className="text-zinc-500 text-xs mt-1.5">
-                        <span>{cliente.planoDetalhe ? `${cliente.planoDetalhe.ilimitado ? 'Ilimitado' : `${cliente.planoDetalhe.limite} Cortes/mês`} • ${cliente.planoDetalhe.preco}` : 'Nenhum plano escolhido'}</span>
+                        <span>{detalhePrincipalCliente(cliente)}</span>
                       </p>
                     </div>
                   </div>
 
                   <div className="flex justify-between items-center text-xs">
-                    <div className="flex items-center gap-1.5 text-zinc-400">
+                    <div className={`flex items-center gap-1.5 ${estilo.icon}`}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                      <span className="font-medium"><span>{cliente.planoDetalhe?.ilimitado ? `${cliente.cortesNoMes} cortes no mês` : `${cliente.cortesNoMes} de ${cliente.planoDetalhe?.limite || 0} cortes no mês`}</span></span>
+                      <span className="font-medium"><span>{detalheUsoCliente(cliente)}</span></span>
                     </div>
                     <span className="text-zinc-500 font-medium">
-                      <span>{statusPendente ? 'Aguardando Ativação' : `Vence ${formatarData(cliente.assinatura?.data_vencimento)}`}</span>
+                      <span>{detalheDataCliente(cliente)}</span>
                     </span>
                   </div>
                 </div>

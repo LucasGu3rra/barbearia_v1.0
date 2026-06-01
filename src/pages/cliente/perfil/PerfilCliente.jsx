@@ -15,7 +15,8 @@ export default function PerfilCliente() {
   const nomesPlanos = { cabelo: 'Só Cabelo', barba: 'Só Barba', completo: 'Cabelo & Barba' };
 
   const carregarPerfil = useCallback(async () => {
-    const id = user?.id || localStorage.getItem('clienteId');
+    const id = user?.id;
+    if (!id) return;
     const { data: cli } = await supabase
       .from('clientes')
       .select('nome, whatsapp, assinaturas(plano_escolhido)')
@@ -46,7 +47,8 @@ export default function PerfilCliente() {
       : `Deseja mudar para ${nomesPlanos[novoPlano]}? Não haverá reembolso da diferença, e a mudança valerá imediatamente. Confirma?`;
 
     if (window.confirm(mensagem)) {
-      const id = user?.id || localStorage.getItem('clienteId');
+      const id = user?.id;
+      if (!id) return;
       const { error } = await supabase
         .from('assinaturas')
         .update({ plano_escolhido: novoPlano })
