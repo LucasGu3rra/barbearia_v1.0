@@ -3,6 +3,19 @@ import { supabase } from '../services/supabase';
 import { getEmpresaPorSlug, limparSessaoPreservandoEmpresa, salvarUltimaEmpresaSlug } from '../services/empresa';
 import { AuthContext } from './AuthContextObject';
 
+const sincronizarClienteStorage = (papel, userId) => {
+  if (typeof window === 'undefined') return;
+
+  if (papel === 'cliente' && userId) {
+    window.localStorage.setItem('clienteId', userId);
+    window.sessionStorage.setItem('clienteId', userId);
+    return;
+  }
+
+  window.localStorage.removeItem('clienteId');
+  window.sessionStorage.removeItem('clienteId');
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -15,6 +28,7 @@ export const AuthProvider = ({ children }) => {
       setEmpresaAtual(null);
       setPapelEmpresa(null);
       setIsAdmin(false);
+      sincronizarClienteStorage(null);
       return { empresa: null, papel: null, isAdmin: false };
     }
 
@@ -23,6 +37,7 @@ export const AuthProvider = ({ children }) => {
       setEmpresaAtual(null);
       setPapelEmpresa(null);
       setIsAdmin(false);
+      sincronizarClienteStorage(null);
       return { empresa: null, papel: null, isAdmin: false };
     }
 
@@ -32,6 +47,7 @@ export const AuthProvider = ({ children }) => {
       setEmpresaAtual(empresa);
       setPapelEmpresa(null);
       setIsAdmin(false);
+      sincronizarClienteStorage(null);
       return { empresa, papel: null, isAdmin: false };
     }
 
@@ -50,6 +66,7 @@ export const AuthProvider = ({ children }) => {
     setEmpresaAtual(empresa);
     setPapelEmpresa(papel);
     setIsAdmin(admin);
+    sincronizarClienteStorage(papel, user.id);
 
     return { empresa, papel, isAdmin: admin };
   }, [user]);
@@ -64,15 +81,14 @@ export const AuthProvider = ({ children }) => {
           setIsAdmin(false);
           setEmpresaAtual(null);
           setPapelEmpresa(null);
+          sincronizarClienteStorage(null);
           setLoading(false);
         }
         return;
       }
 
       try {
-        // Compatibilidade temporaria com telas que ainda usam clienteId no storage.
-        localStorage.setItem('clienteId', session.user.id);
-
+        sincronizarClienteStorage(null);
         if (isMounted) {
           setUser(session.user);
           setIsAdmin(false);

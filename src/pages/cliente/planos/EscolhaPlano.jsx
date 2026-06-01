@@ -81,7 +81,7 @@ export default function EscolhaPlano() {
 
   useEffect(() => {
     const buscarNome = async () => {
-      const id = user?.id || localStorage.getItem('clienteId');
+      const id = user?.id;
       const empresaId = empresa?.id || empresaAtual?.id;
       if (!id || !empresaId) return;
 
@@ -122,7 +122,7 @@ export default function EscolhaPlano() {
   };
 
   async function confirmarContratacao(enviarWhatsapp = true) {
-    const clienteId = user?.id || localStorage.getItem('clienteId');
+    const clienteId = user?.id;
     if (!clienteId) return navigate(montarRotaEmpresa(empresaSlug, ''));
     if (!planoSelecionado) return;
 

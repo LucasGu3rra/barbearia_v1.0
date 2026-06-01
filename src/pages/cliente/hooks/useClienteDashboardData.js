@@ -5,12 +5,15 @@ import { montarRotaEmpresa } from '../../../services/empresa';
 import { parseDataSupabase } from '../utils/clienteDashboardUtils';
 
 const getClienteId = (userId) => {
-  const id = userId || localStorage.getItem('clienteId') || sessionStorage.getItem('clienteId');
-  if (id) {
-    localStorage.setItem('clienteId', id);
-    sessionStorage.setItem('clienteId', id);
+  if (!userId) {
+    localStorage.removeItem('clienteId');
+    sessionStorage.removeItem('clienteId');
+    return null;
   }
-  return id;
+
+  localStorage.setItem('clienteId', userId);
+  sessionStorage.setItem('clienteId', userId);
+  return userId;
 };
 
 export default function useClienteDashboardData({
