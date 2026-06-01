@@ -87,16 +87,32 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
   };
 
   const salvarAlteracoes = async () => {
+    setErroOperacao('');
+    const planoInvalido = planos.find((plano) => {
+      const nomeValido = String(plano.nome || '').trim().length > 0;
+      const precoValido = Number.isFinite(Number(plano.preco)) && Number(plano.preco) >= 0;
+      const limiteValido = Boolean(plano.ilimitado) || (Number.isInteger(Number(plano.limite)) && Number(plano.limite) > 0);
+      const duracaoValida = Number.isInteger(Number(plano.duracao_minutos)) && Number(plano.duracao_minutos) > 0;
+      const servicoValido = !plano.ativo || Boolean(plano.servico_id);
+      return !nomeValido || !precoValido || !limiteValido || !duracaoValida || !servicoValido;
+    });
+
+    if (planoInvalido) {
+      setErroOperacao('Revise os planos: ativos precisam de servico, duracao valida e limite maior que zero.');
+      setPlanoAbertoId(planoInvalido.id);
+      return;
+    }
+
     setSalvando(true);
     try {
       for (const plano of planos) {
         const { error } = await supabase
           .from('planos')
           .update({
-            nome: plano.nome,
-            preco: parseFloat(plano.preco),
-            limite: plano.ilimitado ? 0 : parseInt(plano.limite),
-            duracao_minutos: parseInt(plano.duracao_minutos) || 30,
+            nome: String(plano.nome || '').trim(),
+            preco: Number(plano.preco),
+            limite: plano.ilimitado ? 0 : Number(plano.limite),
+            duracao_minutos: Number(plano.duracao_minutos),
             servico_id: plano.servico_id || null,
             ilimitado: Boolean(plano.ilimitado),
             ativo: Boolean(plano.ativo)

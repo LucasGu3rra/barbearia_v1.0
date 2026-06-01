@@ -16,6 +16,17 @@ const getClienteId = (userId) => {
   return userId;
 };
 
+const assinaturaEstaVigente = (assinatura) => {
+  if (!assinatura || assinatura.status !== 'ativa') return false;
+  if (!assinatura.data_vencimento) return false;
+  const vencimento = new Date(assinatura.data_vencimento);
+  return !Number.isNaN(vencimento.getTime()) && vencimento >= new Date();
+};
+
+const ordenarAssinaturasRecentes = (assinaturas = []) => (
+  [...assinaturas].sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at))
+);
+
 export default function useClienteDashboardData({
   user,
   authLoading,
@@ -42,6 +53,7 @@ export default function useClienteDashboardData({
     try {
       if (empresaId) {
         await supabase.rpc('finalizar_agendamentos_vencidos', { p_empresa_id: empresaId });
+        await supabase.rpc('expirar_assinaturas_vencidas');
       }
 
       const [
@@ -77,7 +89,7 @@ export default function useClienteDashboardData({
         .from('clientes')
         .select(`
           nome, whatsapp, alteracoes_nome,
-          assinaturas(status, data_vencimento, plano_escolhido, proximo_plano, upgrade_pendente),
+          assinaturas(status, data_vencimento, plano_escolhido, proximo_plano, upgrade_pendente, created_at),
           historico_cortes(id, created_at, tipo_corte, status, origem, plano_slug, cancelavel_ate, cancelado_em)
         `)
         .eq('empresa_id', empresaId)
@@ -86,10 +98,13 @@ export default function useClienteDashboardData({
 
       if (error) throw error;
 
-      const ass = cli.assinaturas?.find(a => a.plano_escolhido) || null;
+      const assinaturasOrdenadas = ordenarAssinaturasRecentes(cli.assinaturas || []);
+      const assinaturaAtiva = assinaturasOrdenadas.find(a => a.plano_escolhido && assinaturaEstaVigente(a));
+      const assinaturaPendente = assinaturasOrdenadas.find(a => a.plano_escolhido && a.status === 'pendente');
+      const ass = assinaturaAtiva || assinaturaPendente || assinaturasOrdenadas.find(a => a.plano_escolhido) || null;
       const temPlano = !!ass?.plano_escolhido;
       const statusAss = ass?.status;
-      const tipo = temPlano && statusAss === 'ativa' ? 'ativo' : temPlano ? 'pendente' : 'avulso';
+      const tipo = assinaturaAtiva ? 'ativo' : assinaturaPendente ? 'pendente' : 'avulso';
 
       setTipoCliente(tipo);
 
@@ -101,13 +116,13 @@ export default function useClienteDashboardData({
           return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
         })
         .sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
-      const agendamentosPlanoFinalizadosMes = (dadosAgendamentos || [])
+      const agendamentosPlanoMes = (dadosAgendamentos || [])
         .filter(a => {
           const status = String(a.status || '').toLowerCase();
           const tipoAgendamento = String(a.tipo_cliente || '').toLowerCase();
           const d = parseDataSupabase(a.data_hora || a.created_at);
           return tipoAgendamento === 'assinante'
-            && ['finalizado', 'concluido'].includes(status)
+            && !['cancelado', 'cancelada'].includes(status)
             && d.getMonth() === hoje.getMonth()
             && d.getFullYear() === hoje.getFullYear();
         })
@@ -115,14 +130,15 @@ export default function useClienteDashboardData({
           id: a.id,
           created_at: a.data_hora || a.created_at,
           tipo_corte: a.servicos?.nome || 'Servico do plano',
+          status: a.status || 'agendado',
         }));
-      const cortesUsoPlanoMes = [...cortesDoMes, ...agendamentosPlanoFinalizadosMes]
+      const cortesUsoPlanoMes = [...cortesDoMes, ...agendamentosPlanoMes]
         .sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
       const todosCortes = (cli.historico_cortes || [])
         .filter(c => String(c.status || 'feito').toLowerCase() !== 'cancelado')
         .sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
 
-      const planoInfo = temPlano ? mapa[ass.plano_escolhido] : null;
+      const planoInfo = tipo !== 'avulso' && temPlano ? mapa[ass.plano_escolhido] : null;
       const ilimitado = Boolean(planoInfo?.ilimitado);
       const limite = ilimitado ? 0 : planoInfo?.limite || 5;
       setHistoricoMes(tipo === 'ativo' ? cortesUsoPlanoMes : []);
@@ -135,14 +151,14 @@ export default function useClienteDashboardData({
         iniciais: cli.nome.substring(0, 2).toUpperCase(),
         clienteDesde: dataCadastro.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
         alteracoesNome: cli.alteracoes_nome || 0,
-        status: statusAss || null,
+        status: tipo === 'avulso' ? null : statusAss || null,
         ilimitado,
         limiteTotal: limite,
         cortesRestantes: ilimitado ? null : tipo === 'ativo' ? Math.max(0, limite - cortesUsoPlanoMes.length) : limite,
         vencimentoFormatado: ass?.data_vencimento
           ? new Date(ass.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
           : '--/--',
-        planoId: ass?.plano_escolhido || null,
+        planoId: tipo === 'avulso' ? null : ass?.plano_escolhido || null,
         planoNome: planoInfo?.nome || 'Plano',
         servicoId: planoInfo?.servico_id || null,
         duracaoMinutos: Number(planoInfo?.duracao_minutos || 30),

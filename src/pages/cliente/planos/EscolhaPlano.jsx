@@ -5,6 +5,11 @@ import { useAuth } from '../../../contexts/useAuth';
 import { getEmpresaPorSlug, montarRotaEmpresa, normalizarTelefoneBrasil } from '../../../services/empresa';
 
 const formatarMoeda = (valor) => `R$${Number(valor || 0).toFixed(0)}`;
+const limitarTexto = (texto = '', limite = 30) => {
+  const limpo = String(texto || '').trim();
+  if (limpo.length <= limite) return limpo;
+  return `${limpo.slice(0, limite - 3).trimEnd()}...`;
+};
 
 function Icon({ name, className = 'w-5 h-5' }) {
   const icons = {
@@ -34,14 +39,15 @@ export default function EscolhaPlano() {
   const [nomeCliente, setNomeCliente] = useState('');
   const [planoSelecionado, setPlanoSelecionado] = useState(null);
   const [modalAberto, setModalAberto] = useState(false);
+  const [avisoPresencialAberto, setAvisoPresencialAberto] = useState(false);
   const [pixCopiado, setPixCopiado] = useState(false);
   const [planos, setPlanos] = useState([]);
+  const [popularPlanoSlug, setPopularPlanoSlug] = useState(null);
   const [servicosAvulsos, setServicosAvulsos] = useState([]);
   const [carregando, setCarregando] = useState(true);
 
   const chavePix = empresa?.chave_pix || '81988468182';
   const whatsappBarbearia = normalizarTelefoneBrasil(empresa?.whatsapp || '5581988468182');
-  const empresaNome = (empresa?.nome || 'JOAO BARBER').toUpperCase();
 
   useEffect(() => {
     const buscarDados = async () => {
@@ -58,17 +64,34 @@ export default function EscolhaPlano() {
         }
 
         setEmpresa(empresaBase);
-        const [{ data: dadosPlanos, error: errPlanos }, { data: dadosServicos, error: errServicos }] = await Promise.all([
+        const [
+          { data: dadosPlanos, error: errPlanos },
+          { data: dadosServicos, error: errServicos },
+          { data: dadosAssinaturas, error: errAssinaturas },
+        ] = await Promise.all([
           supabase.from('planos').select('*').eq('empresa_id', empresaBase.id).eq('ativo', true).is('deleted_at', null).order('preco', { ascending: true }),
           supabase.from('servicos').select('*, servico_categorias(nome), servico_subcategorias(nome)').eq('empresa_id', empresaBase.id).eq('ativo', true).is('deleted_at', null).order('created_at', { ascending: true }),
+          supabase.from('assinaturas').select('plano_escolhido, status').eq('empresa_id', empresaBase.id).in('status', ['ativa', 'pendente']),
         ]);
 
         if (errPlanos) throw errPlanos;
         if (errServicos) throw errServicos;
+        if (errAssinaturas) throw errAssinaturas;
 
-        setPlanos(dadosPlanos || []);
+        const planosAtivos = dadosPlanos || [];
+        const contagemPlanos = (dadosAssinaturas || []).reduce((acc, assinatura) => {
+          if (!assinatura.plano_escolhido) return acc;
+          acc[assinatura.plano_escolhido] = (acc[assinatura.plano_escolhido] || 0) + 1;
+          return acc;
+        }, {});
+        const planoPopular = planosAtivos
+          .map((plano, index) => ({ slug: plano.slug, total: contagemPlanos[plano.slug] || 0, index }))
+          .sort((a, b) => b.total - a.total || a.index - b.index)[0];
+
+        setPlanos(planosAtivos);
         setServicosAvulsos(dadosServicos || []);
-        setPlanoSelecionado((dadosPlanos || [])[0] || null);
+        setPlanoSelecionado(planosAtivos[0] || null);
+        setPopularPlanoSlug(planoPopular?.slug || planosAtivos[0]?.slug || null);
       } catch (error) {
         console.error('Erro ao carregar planos:', error);
       } finally {
@@ -103,6 +126,15 @@ export default function EscolhaPlano() {
     setTimeout(() => setPixCopiado(false), 2000);
   };
 
+  const confirmarPagamentoPresencial = () => {
+    setAvisoPresencialAberto(true);
+  };
+
+  const continuarPagamentoPresencial = () => {
+    setAvisoPresencialAberto(false);
+    confirmarContratacao(false);
+  };
+
   const calcularEconomia = (plano) => {
     if (!plano || servicosAvulsos.length === 0) return 0;
 
@@ -115,9 +147,9 @@ export default function EscolhaPlano() {
   const beneficiosPlano = (plano) => {
     const limite = Number(plano?.limite || 0);
     return [
-      plano?.ilimitado ? 'Cortes ilimitados' : limite > 0 ? `${limite} cortes/mês` : 'Uso mensal',
-      'Agendamento',
-      'Sem taxa extra',
+      plano?.ilimitado ? 'Limite ilimitado' : limite > 0 ? `Limite: ${limite} cortes/mês` : 'Limite mensal',
+      'Confirmação presencial',
+      'Benefícios no corte',
     ];
   };
 
@@ -177,10 +209,6 @@ export default function EscolhaPlano() {
         </div>
 
         <div className="scroll" style={{ paddingTop: 12 }}>
-          <div className="client-brand" style={{ maxWidth: '100%', textAlign: 'center', marginBottom: 4 }}>
-            {empresaNome}
-          </div>
-
           <div className="alert ok">
             <Icon name="trend" className="w-5 h-5 flex-shrink-0" />
             <div className="alert-txt">
@@ -196,23 +224,24 @@ export default function EscolhaPlano() {
             </div>
           ) : (
             <div className="plan-grid">
-              {planos.map((plano, index) => {
+              {planos.map((plano) => {
                 const economia = calcularEconomia(plano);
                 const selecionado = planoSelecionado?.slug === plano.slug;
+                const popular = popularPlanoSlug === plano.slug;
 
                 return (
                   <button
                     key={plano.slug}
                     type="button"
-                    className={`plan-card ${index === 0 ? 'featured' : ''} ${selecionado ? 'sel' : ''}`}
+                    className={`plan-card ${popular ? 'featured' : ''} ${selecionado ? 'sel' : ''}`}
                     onClick={() => setPlanoSelecionado(plano)}
                     disabled={loadingId !== null}
                   >
                     <div className="plan-chk">
                       <Icon name="check" className="w-3 h-3" />
                     </div>
-                    {index === 0 ? <div className="pop-label">Popular</div> : <div style={{ height: 22 }} />}
-                    <div className="plan-name">{plano.nome}</div>
+                    {popular && <div className="pop-label">Popular</div>}
+                    <div className="plan-name" title={plano.nome}>{limitarTexto(plano.nome)}</div>
                     <div className="plan-price">
                       <span className="val">{Number(plano.preco || 0).toFixed(0)}</span>
                       <span className="per">/mês</span>
@@ -242,17 +271,17 @@ export default function EscolhaPlano() {
       </div>
 
       {modalAberto && planoSelecionado && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-0">
-          <div className="client-device rounded-t-[28px] sm:rounded-[28px] min-h-0 max-h-[92vh] overflow-y-auto">
-            <div className="back-bar">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/80 backdrop-blur-sm p-0">
+          <div className="client-device relative max-w-none h-full min-h-0 overflow-hidden flex flex-col border-x-0">
+            <div className="back-bar flex-shrink-0">
               <button className="back-btn" onClick={() => setModalAberto(false)}>
                 <Icon name="arrow" className="w-4 h-4" />
               </button>
               <span className="back-title">Pagamento</span>
             </div>
 
-            <div className="scroll" style={{ paddingTop: 12 }}>
-              <div className="card">
+            <div className="scroll flex-1 min-h-0 overflow-y-auto overscroll-contain pb-6" style={{ paddingTop: 12 }}>
+              <div className="card min-h-[84px] flex flex-col justify-center">
                 <div className="stat-lbl">PLANO SELECIONADO</div>
                 <div className="flex items-center justify-between mt-2 gap-3">
                   <div className="text-white text-sm font-semibold">Plano {planoSelecionado.nome}</div>
@@ -289,26 +318,61 @@ export default function EscolhaPlano() {
                 Enviar comprovante no WhatsApp
               </button>
 
-              <div className="alert warn">
+              <div className="alert warn min-h-[72px]">
                 <Icon name="info" className="w-5 h-5 flex-shrink-0" />
                 <div className="alert-txt">
-                  Seu plano será ativado em até <strong>24h</strong> após a confirmação do pagamento pelo barbeiro.
+                  Seu plano será ativado após a confirmação do pagamento pelo barbeiro.
                 </div>
               </div>
 
               <div className="sec">OUTRAS FORMAS</div>
-              <div className="card">
+              <button type="button" onClick={confirmarPagamentoPresencial} disabled={loadingId !== null} className="card w-full min-h-[84px] text-left active:scale-[0.99] transition-transform disabled:opacity-60">
                 <div className="flex items-center gap-3">
-                  <Icon name="store" className="w-5 h-5 text-zinc-500" />
+                  <div className="w-10 h-10 rounded-[12px] bg-[#2c281b] text-[#d5b451] flex items-center justify-center flex-shrink-0">
+                    <Icon name="store" className="w-5 h-5" />
+                  </div>
                   <div>
                     <div className="text-[#d8d3c8] text-sm font-semibold">Cartão ou dinheiro</div>
-                    <div className="text-zinc-500 text-xs mt-0.5">Pagamento presencial na barbearia</div>
+                    <div className="text-zinc-500 text-xs mt-0.5">Pagamento somente presencial na barbearia</div>
                   </div>
                 </div>
-              </div>
+              </button>
 
               <button className="btn ghost" onClick={() => setModalAberto(false)}>Fazer depois</button>
             </div>
+
+            {avisoPresencialAberto && (
+              <div className="absolute inset-0 z-10 flex items-end justify-center bg-black/75 backdrop-blur-sm p-4">
+                <div className="w-full max-w-[390px] rounded-[24px] border border-[#d5b451]/35 bg-[#101010] p-5 shadow-2xl">
+                  <div className="mb-4 flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-[12px] bg-[#2c281b] text-[#d5b451] flex items-center justify-center flex-shrink-0">
+                      <Icon name="store" className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-white text-base font-black">Cartão ou dinheiro</p>
+                      <p className="text-zinc-400 text-xs leading-relaxed mt-1">
+                        Pagamento somente presencial na barbearia. Seu plano ficará pendente e será ativado após a confirmação do pagamento pelo barbeiro.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={continuarPagamentoPresencial}
+                    disabled={loadingId !== null}
+                    className="btn primary"
+                  >
+                    Entendi, continuar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAvisoPresencialAberto(false)}
+                    className="btn ghost mt-2"
+                  >
+                    Voltar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

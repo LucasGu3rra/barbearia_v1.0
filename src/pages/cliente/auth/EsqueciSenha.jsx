@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { supabase } from '../../../services/supabase';// Ajuste o caminho se sua pasta for diferente
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { supabase } from '../../../services/supabase';
 import { montarRotaEmpresa } from '../../../services/empresa';
 
 export default function EsqueciSenha() {
-  const [email, setEmail] = useState('');
+  const location = useLocation();
+  const emailInicial = String(location.state?.email || '').trim().toLowerCase();
+  const [email, setEmail] = useState(emailInicial);
   const [loading, setLoading] = useState(false);
   const [mensagem, setMensagem] = useState(null);
   const navigate = useNavigate();
@@ -12,7 +14,8 @@ export default function EsqueciSenha() {
 
   const handleRecuperarSenha = async (e) => {
     e.preventDefault();
-    if (!email) return;
+    const emailNormalizado = email.trim().toLowerCase();
+    if (!emailNormalizado) return;
     
     setLoading(true);
     setMensagem(null);
@@ -20,7 +23,7 @@ export default function EsqueciSenha() {
     try {
       // O Supabase dispara o e-mail e redireciona o usuário de volta para o app
       const redirectTo = `${window.location.origin}${montarRotaEmpresa(empresaSlug, '/redefinir-senha')}`;
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+      const { error } = await supabase.auth.resetPasswordForEmail(emailNormalizado, { redirectTo });
 
       if (error) throw error;
       
@@ -71,7 +74,7 @@ export default function EsqueciSenha() {
 
           <button
             type="submit"
-            disabled={loading || !email}
+            disabled={loading || !email.trim()}
             className="w-full bg-[#CEAA6B] hover:bg-[#c09d60] disabled:bg-[#27272a] disabled:text-zinc-500 text-black font-bold py-4 rounded-2xl transition-all active:scale-95"
           >
             {loading ? 'Enviando...' : 'Enviar link de recuperação'}

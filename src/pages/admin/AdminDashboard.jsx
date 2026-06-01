@@ -142,6 +142,7 @@ export default function AdminDashboard() {
     
     try {
       await supabase.rpc('finalizar_agendamentos_vencidos', { p_empresa_id: empresaId });
+      await supabase.rpc('expirar_assinaturas_vencidas');
 
       const { data: dadosPlanos, error: errPlanos } = await supabase
         .from('planos')
@@ -387,18 +388,20 @@ export default function AdminDashboard() {
   limiteVencimento.setDate(limiteVencimento.getDate() + 7);
 
   const classificarCliente = (assinaturas = []) => {
-    const pendente = assinaturas.find(a => a.status === 'pendente');
-    if (pendente) return { assinatura: pendente, classificacao: 'pendente' };
+    const assinaturasOrdenadas = [...assinaturas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    const ativa = assinaturas.find(a => a.status === 'ativa');
+    const ativa = assinaturasOrdenadas.find(a => a.status === 'ativa');
     if (ativa) {
       const vencimento = ativa.data_vencimento ? new Date(ativa.data_vencimento) : null;
-      if (vencimento && vencimento < hojeInicio) return { assinatura: ativa, classificacao: 'inativo' };
+      if (!vencimento || vencimento < hojeInicio) return { assinatura: ativa, classificacao: 'inativo' };
       if (vencimento && vencimento <= limiteVencimento) return { assinatura: ativa, classificacao: 'vencendo' };
       return { assinatura: ativa, classificacao: 'ativo' };
     }
 
-    const ultima = [...assinaturas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || null;
+    const pendente = assinaturasOrdenadas.find(a => a.status === 'pendente');
+    if (pendente) return { assinatura: pendente, classificacao: 'pendente' };
+
+    const ultima = assinaturasOrdenadas[0] || null;
     if (ultima) return { assinatura: ultima, classificacao: 'inativo' };
     return { assinatura: null, classificacao: 'avulso' };
   };
@@ -424,6 +427,9 @@ export default function AdminDashboard() {
       const dataAgendamento = new Date(agendamento.data_hora || agendamento.created_at);
       return dataAgendamento.getMonth() === mesAtual && dataAgendamento.getFullYear() === anoAtual;
     });
+    const agendamentosPlanoMes = agendamentosValidosMes.filter(agendamento => {
+      return String(agendamento.tipo_cliente || '').toLowerCase() === 'assinante';
+    });
 
     const ultimoServicoHistorico = cortesGerais.find(corte => {
       return corte.cliente_id === cliente.id && String(corte.status || 'feito').toLowerCase() !== 'cancelado';
@@ -441,13 +447,14 @@ export default function AdminDashboard() {
       return dataAgendamento > dataHistorico ? ultimoServicoAgendamento : ultimoServicoHistorico;
     })();
 
+    const usosPlanoMes = cortesHistoricoMes.length + agendamentosPlanoMes.length;
     const servicosNoMes = cortesHistoricoMes.length + agendamentosValidosMes.length;
 
     return {
       ...cliente,
       assinatura,
       planoDetalhe,
-      cortesNoMes: cortesHistoricoMes.length,
+      cortesNoMes: usosPlanoMes,
       servicosNoMes,
       ultimoServico,
       classificacao,

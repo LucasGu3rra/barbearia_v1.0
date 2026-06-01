@@ -82,6 +82,51 @@ function InfoCard({ label, title, subtitle, pending = false }) {
   );
 }
 
+function UsoPlanoCard({ dados, planoAtivo, usados, pending = false }) {
+  const limite = Math.max(0, Number(dados.limiteTotal || 0));
+  const usadosSeguro = Math.min(limite, Math.max(0, Number(usados || 0)));
+  const restantes = Math.max(0, Number(dados.cortesRestantes || 0));
+
+  return (
+    <div className="relative overflow-hidden bg-[#1b1b1b] border border-[#333] rounded-[14px] p-4 min-h-[112px]">
+      <div className={pending ? 'opacity-40 blur-[1px]' : ''}>
+        <p className="text-[10px] text-zinc-400 font-bold">{dados.ilimitado ? 'Uso do plano' : 'Cortes restantes'}</p>
+        {dados.ilimitado ? (
+          <>
+            <p className="text-white text-3xl font-black mt-3 leading-none">∞</p>
+            <p className="text-zinc-500 text-xs mt-1">plano ilimitado</p>
+          </>
+        ) : (
+          <>
+            <div className="mt-3 flex gap-1.5">
+              {Array.from({ length: Math.max(limite, 1) }).map((_, index) => {
+                const usado = index < usadosSeguro;
+                return (
+                  <span
+                    key={index}
+                    className={`h-3.5 w-3.5 rounded-[4px] ${usado ? 'bg-[#3a3a3a]' : 'bg-[#d5b451]'}`}
+                  />
+                );
+              })}
+            </div>
+            <p className="text-white text-2xl font-black mt-3">
+              {planoAtivo ? restantes : limite}
+              <span className="ml-1 text-xs font-bold text-zinc-500">de {limite}</span>
+            </p>
+          </>
+        )}
+      </div>
+      {pending && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="px-3 py-1.5 rounded-full border border-[#d5b451]/45 bg-[#090909]/80 text-[#d5b451] text-sm font-black">
+            Pendente
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ActionCard({ icon, title, subtitle, onClick, disabled = false }) {
   return (
     <button
@@ -155,12 +200,7 @@ export default function ClienteDashboardPlano({
         </div>
 
         <div className="grid grid-cols-2 gap-3 border-t border-[#252525] pt-4">
-          <InfoCard
-            label={dados.ilimitado ? 'Uso do plano' : 'Cortes restantes'}
-            title={dados.ilimitado ? 'Livre' : planoAtivo ? dados.cortesRestantes : dados.limiteTotal}
-            subtitle={dados.ilimitado ? 'plano ilimitado' : planoAtivo ? `de ${dados.limiteTotal} - ${usados} usados` : `de ${dados.limiteTotal}`}
-            pending={!planoAtivo}
-          />
+          <UsoPlanoCard dados={dados} planoAtivo={planoAtivo} usados={usados} pending={!planoAtivo} />
           <InfoCard
             label="Vencimento"
             title={planoAtivo ? dados.vencimentoFormatado || '--/--' : '--/--'}
@@ -223,10 +263,10 @@ export default function ClienteDashboardPlano({
                 <PedidoRecente
                   key={corte.id}
                   pedido={{
-                    tipo: 'feito',
+                    tipo: corte.status === 'agendado' ? 'agendamento' : 'feito',
                     nome: corte.tipo_corte,
                     data: corte.created_at,
-                    status: 'feito',
+                    status: corte.status || 'feito',
                   }}
                 />
               ))

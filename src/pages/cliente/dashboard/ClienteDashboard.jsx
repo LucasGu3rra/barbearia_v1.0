@@ -94,7 +94,6 @@ export default function ClienteDashboard() {
     servicoAgendamentoInicial,
     modoAgendamento,
     voltarParaServicosAoVoltar,
-    abrirAgendamento,
     abrirAgendamentoSemPlano,
     abrirAgendamentoAvulsoPendente,
     abrirAgendamentoComPlano,
@@ -218,10 +217,13 @@ export default function ClienteDashboard() {
         alterarPlano={alterarPlano}
         cancelarAgendamento={cancelarAgendamento}
         onLogout={handleLogout}
-        agendamentoAtivo={agendamentoAtivo}
         tipoCliente={tipoCliente}
-        onAgendar={abrirAgendamento}
         onPagarPlano={abrirCheckoutPlano}
+        whatsappBarbearia={WHATSAPP_JOAO}
+        onRedefinirSenha={() => {
+          setMenuAberto(false);
+          navigate(montarRotaEmpresa(slugEmpresa, '/esqueci-senha'), { state: { email: user?.email || dados?.email || '' } });
+        }}
         onHistoricoCompleto={() => {
           setMenuAberto(false);
           setModalHistoricoAberto(true);

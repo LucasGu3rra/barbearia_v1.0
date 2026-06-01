@@ -34,17 +34,17 @@ const detalheAgendamento = (agendamento) => {
   ].filter(Boolean).join(' - ');
 };
 
-function InfoCard({ label, title, subtitle, tone = 'strong' }) {
+function InfoCard({ label, title, subtitle, tone = 'strong', disabled = false }) {
   return (
-    <div className="bg-[#1b1b1b] border border-[#333] rounded-[14px] p-4 min-h-[112px]">
+    <div className={`border rounded-[14px] p-4 min-h-[104px] ${disabled ? 'bg-[#151515] border-[#2a2a2a] opacity-65' : 'bg-[#1b1b1b] border-[#333]'}`}>
       <p className="text-[10px] text-zinc-400 font-bold">{label}</p>
-      <p className={`${tone === 'muted' ? 'text-zinc-400 text-sm font-bold' : 'text-white text-xl font-black'} mt-3`}>{title}</p>
+      <p className={`${disabled ? 'text-zinc-500 text-lg font-black' : tone === 'muted' ? 'text-zinc-400 text-sm font-bold' : 'text-white text-xl font-black'} mt-3`}>{title}</p>
       {subtitle && <p className="text-zinc-500 text-xs mt-1">{subtitle}</p>}
     </div>
   );
 }
 
-function ActionCard({ icon, title, subtitle, onClick, disabled = false, compact = false }) {
+function ActionCard({ icon, title, subtitle, onClick, disabled = false, compact = true }) {
   return (
     <button
       type="button"
@@ -92,7 +92,7 @@ function PrimeiroUso({
           compact
         />
 
-        <PlanoCallout temPlanos={temPlanos} onAbrirPlanos={onAbrirPlanos} />
+        {agendamentoAtivo && <PlanoCallout temPlanos={temPlanos} onAbrirPlanos={onAbrirPlanos} />}
 
         <h2 className="text-white text-lg font-black mb-1">Escolha seu servico</h2>
 
@@ -104,7 +104,7 @@ function PrimeiroUso({
           />
         ) : (
           <AlertBox type="warn" icon="calendarOff">
-            A barbearia pausou novos agendamentos online agora. Para cortar, va direto ate a barbearia; planos continuam disponiveis.
+            Os agendamentos pelo site estão pausados no momento. Conheça os nossos planos disponíveis e aproveite descontos especiais nos seus cortes.
           </AlertBox>
         )}
 
@@ -134,6 +134,7 @@ function Recorrente({
 }) {
   const ultimo = ultimoServico;
   const temAgendamentoAtivo = Boolean(proximoAgendamento);
+  const semHistorico = Number(servicosFeitos ?? historicoCompleto.length) === 0;
 
   return (
     <div className="page on">
@@ -144,26 +145,33 @@ function Recorrente({
           status={{ icon: 'x', label: 'Sem plano ativo', variant: 'none' }}
         />
 
-        <PlanoCallout temPlanos={temPlanos} onAbrirPlanos={onAbrirPlanos} />
+        {agendamentoAtivo && <PlanoCallout temPlanos={temPlanos} onAbrirPlanos={onAbrirPlanos} />}
 
         <div className="border-t border-[#252525] pt-4">
-          <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.22em] mb-2">
-            {proximoAgendamento ? 'Proximo agendamento' : agendamentoAtivo ? 'Sem agendamento ativo' : 'Agendamento online pausado'}
-          </p>
-          <p className="text-white text-xl font-black">
-            {proximoAgendamento ? formatarDataAgendamento(proximoAgendamento.data_hora) : agendamentoAtivo ? 'Pronto para agendar' : 'Atendimento direto na barbearia'}
+          {(proximoAgendamento || agendamentoAtivo) && (
+            <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.22em] mb-2">
+              {proximoAgendamento ? 'Proximo agendamento' : 'Sem agendamento ativo'}
+            </p>
+          )}
+          <p className="text-white text-lg font-black">
+            {proximoAgendamento ? formatarDataAgendamento(proximoAgendamento.data_hora) : agendamentoAtivo ? 'Pronto para agendar' : 'Atendimento na barbearia'}
           </p>
           <p className="text-[#d8d3c8] text-xs mt-2 leading-relaxed">
             {proximoAgendamento
               ? detalheAgendamento(proximoAgendamento)
               : agendamentoAtivo
               ? 'O cliente pode ter apenas um agendamento ativo por vez.'
-              : 'No momento os agendamentos pelo site estao desativados. Para cortar, va diretamente ate a barbearia e aguarde o atendimento presencial.'}
+              : 'Os agendamentos pelo site estão pausados no momento. Conheça os nossos planos disponíveis e aproveite descontos especiais nos seus cortes.'}
           </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 border-t border-[#252525] pt-4">
-          <InfoCard label="Servicos feitos" title={servicosFeitos ?? historicoCompleto.length} subtitle="historico avulso" />
+          <InfoCard
+            label="Servicos feitos"
+            title={semHistorico ? '-' : servicosFeitos ?? historicoCompleto.length}
+            subtitle={semHistorico ? 'sem historico' : 'historico avulso'}
+            disabled={semHistorico}
+          />
           <InfoCard label="Status" title="Sem plano ativo" tone="muted" />
         </div>
 
@@ -189,7 +197,7 @@ function Recorrente({
             <ActionCard
               icon={agendamentoAtivo ? 'scissors' : 'calendarOff'}
               title={agendamentoAtivo ? 'Escolher servico' : 'Agendamento pausado'}
-              subtitle={agendamentoAtivo ? 'corte, barba ou combo' : 'novos horarios indisponiveis'}
+              subtitle={agendamentoAtivo ? 'corte, barba ou combo' : 'indisponivel online'}
               onClick={onAbrirAgendamentoSemPlano}
               disabled={!agendamentoAtivo}
             />
@@ -229,13 +237,6 @@ function Recorrente({
             </div>
           )}
         </div>
-
-        {!agendamentoAtivo && (
-          <div className="alert warn">
-            <Icon name="calendarOff" className="w-5 h-5 flex-shrink-0" />
-            <div className="alert-txt">A barbearia pausou novos agendamentos online. Para cortar, va direto ate a barbearia.</div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -257,7 +258,7 @@ export default function ClienteDashboardAvulso({
   onVerAgendamento,
   onCancelarAgendamento,
 }) {
-  if (primeiroUso) {
+  if (primeiroUso && agendamentoAtivo) {
     return (
       <PrimeiroUso
         dados={dados}
