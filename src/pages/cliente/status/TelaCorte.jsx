@@ -5,6 +5,12 @@ import { supabase } from '../../../services/supabase';
 import { useAuth } from '../../../contexts/useAuth';
 import { montarRotaEmpresa } from '../../../services/empresa';
 
+const assinaturaEstaVigente = (assinatura) => {
+  if (!assinatura || assinatura.status !== 'ativa' || !assinatura.data_vencimento) return false;
+  const vencimento = new Date(assinatura.data_vencimento);
+  return !Number.isNaN(vencimento.getTime()) && vencimento >= new Date();
+};
+
 export default function TelaCorte() {
   const navigate = useNavigate();
   const { empresaSlug } = useParams();
@@ -34,6 +40,8 @@ export default function TelaCorte() {
       return;
     }
 
+    await supabase.rpc('expirar_assinaturas_vencidas');
+
     const { data: dadosPlanos } = await supabase
       .from('planos')
       .select('slug, nome, limite, ilimitado')
@@ -50,8 +58,12 @@ export default function TelaCorte() {
       .eq('id', id)
       .single();
 
-    const assinatura = cli?.assinaturas?.find((item) => item.status === 'ativa') || cli?.assinaturas?.[0];
+    const assinatura = cli?.assinaturas?.find(assinaturaEstaVigente) || null;
     const planoAtual = mapaPlanos[assinatura?.plano_escolhido] || null;
+    if (!assinatura || !planoAtual) {
+      navigate(montarRotaEmpresa(slugEmpresa, '/dashboard'));
+      return;
+    }
     const limiteDoPlano = planoAtual?.ilimitado ? 0 : planoAtual?.limite || 0;
 
     const { data: ultimoCorte } = await supabase
@@ -88,7 +100,7 @@ export default function TelaCorte() {
       corteId: ultimoCorte?.origem === 'plano_confirmacao' ? ultimoCorte.id : null,
       cancelavelAte: ultimoCorte?.origem === 'plano_confirmacao' ? ultimoCorte.cancelavel_ate : null,
     });
-  }, [empresaId, empresaSlug, navigate, user?.id]);
+  }, [empresaId, empresaSlug, navigate, slugEmpresa, user?.id]);
 
   useEffect(() => {
     if (authLoading || !empresaId) return;
