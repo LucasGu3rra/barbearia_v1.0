@@ -43,7 +43,6 @@ export default function EscolhaPlano() {
   const [pixCopiado, setPixCopiado] = useState(false);
   const [planos, setPlanos] = useState([]);
   const [popularPlanoSlug, setPopularPlanoSlug] = useState(null);
-  const [servicosAvulsos, setServicosAvulsos] = useState([]);
   const [carregando, setCarregando] = useState(true);
 
   const chavePix = empresa?.chave_pix || '81988468182';
@@ -66,16 +65,13 @@ export default function EscolhaPlano() {
         setEmpresa(empresaBase);
         const [
           { data: dadosPlanos, error: errPlanos },
-          { data: dadosServicos, error: errServicos },
           { data: dadosAssinaturas, error: errAssinaturas },
         ] = await Promise.all([
           supabase.from('planos').select('*').eq('empresa_id', empresaBase.id).eq('ativo', true).is('deleted_at', null).order('preco', { ascending: true }),
-          supabase.from('servicos').select('*, servico_categorias(nome), servico_subcategorias(nome)').eq('empresa_id', empresaBase.id).eq('ativo', true).is('deleted_at', null).order('created_at', { ascending: true }),
           supabase.from('assinaturas').select('plano_escolhido, status').eq('empresa_id', empresaBase.id).in('status', ['ativa', 'pendente']),
         ]);
 
         if (errPlanos) throw errPlanos;
-        if (errServicos) throw errServicos;
         if (errAssinaturas) throw errAssinaturas;
 
         const planosAtivos = dadosPlanos || [];
@@ -89,7 +85,6 @@ export default function EscolhaPlano() {
           .sort((a, b) => b.total - a.total || a.index - b.index)[0];
 
         setPlanos(planosAtivos);
-        setServicosAvulsos(dadosServicos || []);
         setPlanoSelecionado(planosAtivos[0] || null);
         setPopularPlanoSlug(planoPopular?.slug || planosAtivos[0]?.slug || null);
       } catch (error) {
@@ -133,15 +128,6 @@ export default function EscolhaPlano() {
   const continuarPagamentoPresencial = () => {
     setAvisoPresencialAberto(false);
     confirmarContratacao(false);
-  };
-
-  const calcularEconomia = (plano) => {
-    if (!plano || servicosAvulsos.length === 0) return 0;
-
-    const nomePlano = plano.nome?.toLowerCase() || '';
-    const servicoMesmoNome = servicosAvulsos.find((servico) => nomePlano.includes((servico.nome || '').toLowerCase()));
-    const servicoRef = servicoMesmoNome || [...servicosAvulsos].sort((a, b) => Number(b.preco) - Number(a.preco))[0];
-    return Math.max(0, Number(servicoRef?.preco || 0) * Number(plano.limite || 1) - Number(plano.preco || 0));
   };
 
   const beneficiosPlano = (plano) => {
@@ -225,7 +211,6 @@ export default function EscolhaPlano() {
           ) : (
             <div className="plan-grid">
               {planos.map((plano) => {
-                const economia = calcularEconomia(plano);
                 const selecionado = planoSelecionado?.slug === plano.slug;
                 const popular = popularPlanoSlug === plano.slug;
 
@@ -254,9 +239,6 @@ export default function EscolhaPlano() {
                         </li>
                       ))}
                     </ul>
-                    <div className="economy-tag">
-                      {economia > 0 ? `Economia de R$${economia.toFixed(0)}` : 'Melhor custo'}
-                    </div>
                   </button>
                 );
               })}

@@ -154,9 +154,9 @@ const InitialRoute = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <PwaInstallProvider>
-        <PushNotificationProvider>
-          <BrowserRouter>
+      <BrowserRouter>
+        <PwaInstallProvider>
+          <PushNotificationProvider>
             <Routes>
               <Route path="/" element={<RootRoute />} />
               <Route path="/cadastro" element={<AcessoPorLink />} />
@@ -184,9 +184,9 @@ export default function App() {
               <Route path="/:empresaSlug/bloqueado" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['cliente']}><TelaBloqueio /></ProtectedRoute></EmpresaAtivaRoute>} />
               <Route path="*" element={<AcessoPorLink />} />
             </Routes>
-          </BrowserRouter>
-        </PushNotificationProvider>
-      </PwaInstallProvider>
+          </PushNotificationProvider>
+        </PwaInstallProvider>
+      </BrowserRouter>
     </AuthProvider>
   );
 }

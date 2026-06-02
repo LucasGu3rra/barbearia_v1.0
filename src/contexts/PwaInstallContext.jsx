@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { PwaInstallContext } from './PwaInstallContextObject';
 
 const INSTALL_PROMPT_DISMISSED_KEY = 'barberPwaInstallPromptDismissed';
@@ -8,22 +9,23 @@ const isStandaloneMode = () => {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 };
 
+const podeMostrarPromptNaRota = (pathname) => (
+  /\/dashboard(?:\/)?$/.test(pathname)
+  || /\/admin\/dashboard(?:\/)?$/.test(pathname)
+  || /\/barbeiro\/dashboard(?:\/)?$/.test(pathname)
+);
+
 export const PwaInstallProvider = ({ children }) => {
+  const location = useLocation();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(() => isStandaloneMode());
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const installPromptAllowed = podeMostrarPromptNaRota(location.pathname);
 
   useEffect(() => {
-    let promptTimer = null;
-
     const handleBeforeInstallPrompt = (event) => {
       event.preventDefault();
       setDeferredPrompt(event);
-
-      const promptDismissed = window.localStorage.getItem(INSTALL_PROMPT_DISMISSED_KEY);
-      if (!promptDismissed && !isStandaloneMode()) {
-        promptTimer = window.setTimeout(() => setShowInstallPrompt(true), 900);
-      }
     };
 
     const handleAppInstalled = () => {
@@ -37,11 +39,28 @@ export const PwaInstallProvider = ({ children }) => {
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
-      if (promptTimer) window.clearTimeout(promptTimer);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
+
+  useEffect(() => {
+    if (!deferredPrompt || isInstalled || isStandaloneMode()) {
+      return undefined;
+    }
+
+    if (!installPromptAllowed) {
+      return undefined;
+    }
+
+    const promptDismissed = window.localStorage.getItem(INSTALL_PROMPT_DISMISSED_KEY);
+    if (promptDismissed) {
+      return undefined;
+    }
+
+    const promptTimer = window.setTimeout(() => setShowInstallPrompt(true), 900);
+    return () => window.clearTimeout(promptTimer);
+  }, [deferredPrompt, installPromptAllowed, isInstalled]);
 
   const canInstall = Boolean(deferredPrompt) && !isInstalled;
 
@@ -80,7 +99,7 @@ export const PwaInstallProvider = ({ children }) => {
     <PwaInstallContext.Provider value={value}>
       {children}
 
-      {showInstallPrompt && canInstall && (
+      {showInstallPrompt && canInstall && installPromptAllowed && (
         <div className="fixed inset-x-0 bottom-0 z-[10000] flex justify-center px-4 pb-4">
           <div className="w-full max-w-[390px] rounded-[24px] border border-[#2b2b2f] bg-[#09090b] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.85)]">
             <div className="flex items-start gap-3">

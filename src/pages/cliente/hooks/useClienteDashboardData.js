@@ -83,7 +83,7 @@ export default function useClienteDashboardData({
       const { data: cli, error } = await supabase
         .from('clientes')
         .select(`
-          nome, whatsapp, alteracoes_nome,
+          nome, whatsapp, email, alteracoes_nome,
           assinaturas(status, data_vencimento, plano_escolhido, proximo_plano, upgrade_pendente, created_at),
           historico_cortes(id, created_at, tipo_corte, status, origem, plano_slug, cancelavel_ate, cancelado_em)
         `)
@@ -143,6 +143,7 @@ export default function useClienteDashboardData({
       setDados({
         nome: cli.nome,
         whatsapp: cli.whatsapp,
+        email: cli.email,
         iniciais: cli.nome.substring(0, 2).toUpperCase(),
         clienteDesde: dataCadastro.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
         alteracoesNome: cli.alteracoes_nome || 0,

@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 export const EMPRESA_PADRAO_ID = '00000000-0000-0000-0000-000000000001';
 export const EMPRESA_PADRAO_SLUG = 'barbearia-do-joao';
 export const ULTIMA_EMPRESA_SLUG_KEY = 'ultimaEmpresaSlug';
+export const LOGO_PADRAO_URL = '/barbeariaclick-logo.png';
 
 const slugSeguro = (slug) => /^[a-z0-9-]+$/.test(String(slug || ''));
 
@@ -30,7 +31,7 @@ export const getEmpresaPorSlug = async (slug) => {
 
   const { data, error } = await supabase
     .from('empresas')
-    .select('id, nome, slug, whatsapp, chave_pix, ativa')
+    .select('id, nome, slug, whatsapp, chave_pix, logo_url, ativa')
     .eq('slug', slugBusca)
     .eq('ativa', true)
     .maybeSingle();
@@ -45,8 +46,16 @@ export const getEmpresaPorSlug = async (slug) => {
     nome: 'Barbearia do Joao',
     whatsapp: '5581988468182',
     chave_pix: '81988468182',
+    logo_url: LOGO_PADRAO_URL,
     ativa: true,
   };
+};
+
+export const resolverLogoEmpresa = (logoUrl) => {
+  const valor = String(logoUrl || '').trim();
+  if (!valor) return LOGO_PADRAO_URL;
+  if (valor.startsWith('http://') || valor.startsWith('https://') || valor.startsWith('/')) return valor;
+  return LOGO_PADRAO_URL;
 };
 
 export const montarRotaEmpresa = (slug, rota = '') => {
