@@ -48,7 +48,7 @@ export default function EsqueciSenha() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-3">
             <div className="w-1.5 h-1.5 bg-[#CEAA6B] rounded-full"></div>
-            <span className="text-[#CEAA6B] text-[10px] font-bold tracking-[0.3em] uppercase">Barbearia do João</span>
+            <span className="text-[#CEAA6B] text-[10px] font-bold tracking-[0.3em] uppercase">barbeariaclick</span>
           </div>
           <h2 className="text-2xl font-bold text-white mb-2">Recuperar Senha</h2>
           <p className="text-zinc-500 text-sm">Digite seu e-mail para receber um link de redefinição.</p>

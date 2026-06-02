@@ -30,7 +30,7 @@ const formatarDataAgendamento = (valor) => {
 const detalheAgendamento = (agendamento) => {
   if (!agendamento) return null;
   return [
-    agendamento.servicos?.nome || 'Servico',
+    agendamento.servicos?.nome || 'Serviço',
     agendamento.barbeiros?.nome,
     agendamento.filiais?.nome,
   ].filter(Boolean).join(' - ');
@@ -40,7 +40,7 @@ const PedidoRecente = ({ pedido }) => {
   if (!pedido) {
     return (
       <div className="p-6 text-center border border-dashed border-[#333] rounded-[12px]">
-        <p className="text-zinc-600 text-xs italic">Nenhum servico registrado ainda.</p>
+        <p className="text-zinc-600 text-xs italic">Nenhum serviço registrado ainda.</p>
       </div>
     );
   }
@@ -171,7 +171,7 @@ export default function ClienteDashboardPlano({
       <div className="scroll">
         <HeroCard
           dados={dados}
-          sub={planoAtivo ? `Plano vence em ${dados.vencimentoFormatado}` : 'Aguardando ativacao do plano'}
+          sub={planoAtivo ? `Plano vence em ${dados.vencimentoFormatado}` : 'Aguardando ativação do plano'}
           status={{
             icon: planoAtivo ? 'check' : 'clock',
             label: planoAtivo ? `Plano ${dados.planoNome}` : 'Plano pendente',
@@ -180,22 +180,24 @@ export default function ClienteDashboardPlano({
         />
 
         <div className="border-t border-[#252525] pt-4">
-          <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.22em] mb-2">
-            {temAgendamentoAtivo ? 'Proximo agendamento' : planoAtivo && !agendamentoAtivo ? 'Plano sem agendamento online' : planoAtivo ? 'Plano ativo' : 'Plano pendente'}
-          </p>
+          {!(planoAtivo && !agendamentoAtivo && !temAgendamentoAtivo) && (
+            <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.22em] mb-2">
+              {temAgendamentoAtivo ? 'Proximo agendamento' : planoAtivo ? 'Plano ativo' : 'Plano pendente'}
+            </p>
+          )}
           <p className="text-white text-xl font-black">
-            {temAgendamentoAtivo ? formatarDataAgendamento(proximoAgendamento.data_hora) : planoAtivo && !agendamentoAtivo ? 'Confirme o corte no local' : planoAtivo ? dados.planoNome : 'Aguardando ativacao'}
+            {temAgendamentoAtivo ? formatarDataAgendamento(proximoAgendamento.data_hora) : planoAtivo && !agendamentoAtivo ? 'Confirme o corte no local' : planoAtivo ? dados.planoNome : 'Aguardando ativação'}
           </p>
           <p className="text-[#d8d3c8] text-xs mt-2 leading-relaxed">
             {temAgendamentoAtivo
               ? detalheAgendamento(proximoAgendamento)
               : planoAtivo && !agendamentoAtivo
-              ? 'Os horarios pelo site estao pausados. Ao chegar na barbearia, toque em Confirmar corte, o sistema consome 1 uso do plano e libera a tela verde para mostrar ao barbeiro.'
+              ? 'Os agendamentos pelo sistema estão pausados. Ao chegar na barbearia, toque em Confirmar corte. O sistema irá consumir 1 uso do plano e liberar a tela de confirmação para mostrar ao barbeiro.'
               : planoAtivo
-              ? 'Use seu plano para agendar o servico incluso ou escolha outro servico avulso.'
+              ? 'Use seu plano para agendar o serviço incluso ou escolha outro serviço avulso.'
               : agendamentoAtivo
-              ? 'Seu plano foi solicitado. Enquanto aguarda ativacao, voce ainda pode agendar servicos avulsos.'
-              : 'Seu plano foi solicitado. O agendamento online esta pausado no momento.'}
+              ? 'Seu plano foi solicitado. Enquanto aguarda ativação, você ainda pode agendar serviços avulsos.'
+              : 'Seu plano foi solicitado. O agendamento online está pausado no momento.'}
           </p>
         </div>
 
@@ -204,7 +206,7 @@ export default function ClienteDashboardPlano({
           <InfoCard
             label="Vencimento"
             title={planoAtivo ? dados.vencimentoFormatado || '--/--' : '--/--'}
-            subtitle={planoAtivo ? 'mensalidade' : 'apos ativacao'}
+            subtitle={planoAtivo ? 'mensalidade' : 'após ativação'}
             pending={!planoAtivo}
           />
         </div>
@@ -231,7 +233,7 @@ export default function ClienteDashboardPlano({
                 <ActionCard
                   icon={planoAtivo ? 'calendar' : 'clock'}
                   title={planoAtivo ? 'Agendar com plano' : 'Plano pendente'}
-                  subtitle={planoAtivo ? 'servico incluso' : 'aguarde ativacao'}
+                  subtitle={planoAtivo ? 'serviço incluso' : 'aguarde ativação'}
                   onClick={onAbrirAgendamentoPlano}
                   disabled={!podeAgendarComPlano}
                 />
@@ -239,15 +241,15 @@ export default function ClienteDashboardPlano({
                 <ActionCard
                   icon={planoAtivo ? 'check' : 'clock'}
                   title={planoAtivo ? 'Confirmar corte' : 'Plano pendente'}
-                  subtitle={planoAtivo ? 'consome 1 uso do plano' : 'aguarde ativacao'}
+                  subtitle={planoAtivo ? 'consome 1 uso do plano' : 'aguarde ativação'}
                   onClick={onConfirmarCortePlano}
                   disabled={!podeConfirmarCorte}
                 />
               )}
               <ActionCard
                 icon={agendamentoAtivo ? 'scissors' : 'calendarOff'}
-                title={agendamentoAtivo ? 'Outro servico' : 'Sem avulso online'}
-                subtitle={agendamentoAtivo ? 'servico avulso' : 'somente na barbearia'}
+                title={agendamentoAtivo ? 'Outro serviço' : 'Agendamento pausado'}
+                subtitle={agendamentoAtivo ? 'serviço avulso' : 'somente na barbearia'}
                 onClick={onAbrirOutroServico}
                 disabled={!podeAgendarAvulso}
               />

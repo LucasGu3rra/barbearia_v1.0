@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { signOutWithPushCleanup } from '../../../services/authSession';
 import { supabase } from '../../../services/supabase';
 import { getEmpresaPorSlug, limparSessaoPreservandoEmpresa, montarRotaEmpresa } from '../../../services/empresa';
 import logo from '../../../assets/logo.png';
@@ -42,7 +43,7 @@ export default function ClienteLogin() {
           .maybeSingle();
 
         if (!vinculo?.papel) {
-          await supabase.auth.signOut();
+          await signOutWithPushCleanup({ empresaId: empresa.id, userId });
           limparSessaoPreservandoEmpresa();
           throw new Error('Essa conta nao pertence a esta barbearia.');
         }

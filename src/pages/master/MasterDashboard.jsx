@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { signOutWithPushCleanup } from '../../services/authSession';
 import { supabase } from '../../services/supabase';
 
 const slugify = (valor) => valor
@@ -125,7 +126,7 @@ export default function MasterDashboard() {
   };
 
   const sair = async () => {
-    await supabase.auth.signOut();
+    await signOutWithPushCleanup();
     setResultado(null);
     setErro('');
   };

@@ -3,6 +3,7 @@ import { Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/useAuth';
 import { usePwaInstall } from '../../contexts/usePwaInstall';
 import { usePushNotifications } from '../../contexts/usePushNotifications';
+import { signOutWithPushCleanup } from '../../services/authSession';
 import { montarRotaEmpresa } from '../../services/empresa';
 import {
   carregarNotificacoesCache,
@@ -352,8 +353,6 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
     permission: pushPermission,
     status: pushStatus,
     enablePush,
-    sendTestPush,
-    sendDelayedTestPush,
   } = usePushNotifications();
 
   if (!isOpen) return null;
@@ -365,25 +364,16 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
   };
   const ativarNotificacoes = async () => {
     if (!pushAvailable) return;
-
-    if (pushEnabled) {
-      await sendTestPush();
-      return;
-    }
+    if (pushEnabled) return;
 
     await enablePush();
-  };
-
-  const testarNotificacaoAtrasada = async () => {
-    if (!pushAvailable || !pushEnabled) return;
-    await sendDelayedTestPush();
   };
 
   const notificacaoLabel = (() => {
     if (!pushConfigured) return 'Configurar notificacoes';
     if (!pushSupported) return 'Notificacoes indisponiveis';
     if (pushPermission === 'denied' || pushStatus === 'denied') return 'Notificacoes bloqueadas';
-    if (pushEnabled) return 'Enviar teste push';
+    if (pushEnabled) return 'Notificacoes ativas';
     return 'Ativar notificacoes';
   })();
 
@@ -391,7 +381,7 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
     if (!pushConfigured) return 'Chave VAPID ausente';
     if (!pushSupported) return 'Use HTTPS ou app instalado';
     if (pushPermission === 'denied' || pushStatus === 'denied') return 'Liberar nas configuracoes';
-    if (pushEnabled) return 'Enviar para este aparelho';
+    if (pushEnabled) return 'Este aparelho recebera avisos';
     return 'Avisos da agenda';
   })();
 
@@ -483,7 +473,7 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
             <button
               type="button"
               onClick={ativarNotificacoes}
-              disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus) || pushPermission === 'denied'}
+              disabled={pushEnabled || !pushAvailable || pushStatus === 'saving' || pushPermission === 'denied'}
               className="relative flex w-full items-center justify-between rounded-[18px] bg-[#101011] px-4 py-3.5 text-left active:scale-[0.99] disabled:opacity-60"
             >
               <span className="absolute left-4 right-4 top-0 h-px bg-[#d5b451]/25" />
@@ -494,26 +484,6 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
                 <div>
                   <p className="text-sm font-black text-white">{notificacaoLabel}</p>
                   <p className="mt-0.5 text-xs text-zinc-600">{notificacaoSubtexto}</p>
-                </div>
-              </div>
-              <svg className="shrink-0 text-[#d5b451]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
-            </button>
-          )}
-          {pushVisible && pushEnabled && (
-            <button
-              type="button"
-              onClick={testarNotificacaoAtrasada}
-              disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus)}
-              className="relative flex w-full items-center justify-between rounded-[18px] bg-[#101011] px-4 py-3.5 text-left active:scale-[0.99] disabled:opacity-60"
-            >
-              <span className="absolute left-4 right-4 top-0 h-px bg-[#d5b451]/25" />
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#d5b451]/10 text-[#d5b451]">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-                </div>
-                <div>
-                  <p className="text-sm font-black text-white">Teste push em 1 min</p>
-                  <p className="mt-0.5 text-xs text-zinc-600">Feche o app apos clicar</p>
                 </div>
               </div>
               <svg className="shrink-0 text-[#d5b451]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
@@ -543,6 +513,29 @@ function BarbeiroDrawer({ isOpen, onClose, barbeiro, user, onLogout, onOpenPerfi
           to { opacity: 1; }
         }
       ` }} />
+    </div>
+  );
+}
+
+function BarbeiroDashboardSkeleton() {
+  return (
+    <div className="space-y-5 pt-5 animate-pulse">
+      <section className="h-20 rounded-[24px] border border-[#27272a] bg-[#171717]" />
+      <div className="grid grid-cols-3 gap-2">
+        <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#171717]" />
+        <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#171717]" />
+        <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#171717]" />
+      </div>
+      <section className="h-28 rounded-[18px] border border-[#27272a] bg-[#111111]" />
+      <div className="flex gap-2 overflow-hidden">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="h-[70px] min-w-[74px] rounded-[16px] border border-[#27272a] bg-[#171717]" />
+        ))}
+      </div>
+      <div className="space-y-3">
+        <div className="h-16 rounded-[16px] border border-[#27272a] bg-[#171717]" />
+        <div className="h-16 rounded-[16px] border border-[#27272a] bg-[#171717]" />
+      </div>
     </div>
   );
 }
@@ -634,8 +627,6 @@ export default function BarbeiroDashboard() {
       const inicio = inicioDoDia(dataSelecionada).toISOString();
       const fim = fimDoDia(dataSelecionada).toISOString();
 
-      await supabase.rpc('finalizar_agendamentos_vencidos', { p_empresa_id: empresaAtual.id });
-
       const [{ data: dadosBarbeiro }, { data: dadosAgenda }] = await Promise.all([
         supabase
           .from('barbeiros')
@@ -707,7 +698,7 @@ export default function BarbeiroDashboard() {
   }
 
   const sair = async () => {
-    await supabase.auth.signOut();
+    await signOutWithPushCleanup({ empresaId, userId });
   };
 
   return (
@@ -743,7 +734,7 @@ export default function BarbeiroDashboard() {
         </header>
 
         {loading ? (
-          <p className="py-10 text-center text-sm text-zinc-500">Carregando agenda...</p>
+          <BarbeiroDashboardSkeleton />
         ) : (
           <div key={agendaAnimacaoId} className="space-y-5 pt-5" style={{ animation: 'barbeiroAgendaIn 220ms ease-out both' }}>
             <section className="rounded-[24px] border border-[#27272a] bg-[#171717] p-4">

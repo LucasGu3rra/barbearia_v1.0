@@ -18,6 +18,7 @@ export default function TelaCorte() {
   const empresaId = empresaAtual?.id;
   const slugEmpresa = empresaAtual?.slug || empresaSlug;
   const [cancelando, setCancelando] = useState(false);
+  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [agoraMs, setAgoraMs] = useState(0);
   const [dados, setDados] = useState({
     nome: '',
@@ -39,8 +40,6 @@ export default function TelaCorte() {
       navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
       return;
     }
-
-    await supabase.rpc('expirar_assinaturas_vencidas');
 
     const { data: dadosPlanos } = await supabase
       .from('planos')
@@ -120,12 +119,16 @@ export default function TelaCorte() {
 
   const cancelarCorte = async () => {
     if (!dados.corteId || cancelando) return;
+    if (!confirmarCancelamento) {
+      setConfirmarCancelamento(true);
+      return;
+    }
     setCancelando(true);
     const { error } = await supabase.rpc('cancelar_corte_plano', { p_corte_id: dados.corteId });
     setCancelando(false);
 
     if (error) {
-      alert('Nao foi possivel cancelar este corte. O prazo pode ter expirado.');
+      alert('Não foi possível cancelar este corte. O prazo pode ter expirado.');
       return;
     }
 
@@ -136,11 +139,7 @@ export default function TelaCorte() {
   const scissorsPath = 'M9.64,7.64 C9.87,7.14 10,6.59 10,6 C10,3.79 8.21,2 6,2 C3.79,2 2,3.79 2,6 C2,8.21 3.79,10 6,10 C6.59,10 7.14,9.87 7.64,9.64 L10,12 L7.64,14.36 C7.14,14.13 6.59,14 6,14 C3.79,14 2,15.79 2,18 C2,20.21 3.79,22 6,22 C8.21,22 10,20.21 10,18 C10,17.41 9.87,16.86 9.64,16.36 L12,14 L19,21 H22 V20 L9.64,7.64 Z M6,8 C4.9,8 4,7.1 4,6 C4,4.9 4.9,4 6,4 C7.1,4 8,4.9 8,6 C8,7.1 7.1,8 6,8 Z M6,20 C4.9,20 4,19.1 4,18 C4,16.9 4.9,16 6,16 C7.1,16 8,16.9 8,18 C8,19.1 7.1,20 6,20 Z M19,3 L12,10 L14,12 L22,4 V3 H19 Z';
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center pt-10 pb-8 px-5 font-sans relative">
-      <h2 className="text-[#b67b36] text-[10px] font-medium tracking-[0.25em] uppercase text-center mb-8">
-        {(empresaAtual?.nome || 'Barbearia').toUpperCase()}
-      </h2>
-
+    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center pt-8 pb-8 px-5 font-sans relative">
       <div className="w-full max-w-[340px] bg-[#08100a] border border-[#1bc64d] rounded-[24px] p-6 flex flex-col items-center shadow-[0_0_30px_-10px_rgba(27,198,77,0.15)]">
         <div className="w-24 h-24 bg-[#0b1e11] border-2 border-[#143d21] rounded-full mb-6 flex items-center justify-center shadow-[0_0_20px_inset_rgba(59,248,118,0.1)] overflow-hidden">
           <div className="scene flex items-center justify-center w-full h-full">
@@ -162,13 +161,10 @@ export default function TelaCorte() {
           </div>
         </div>
 
-        <p className="text-[#22a04c] text-[11px] font-bold uppercase tracking-[0.1em] mb-1">
-          Plano confirmado
-        </p>
         <h1 className="text-[#3bf876] text-4xl font-black tracking-tight mb-2 drop-shadow-[0_0_8px_rgba(59,248,118,0.3)]">
           LIBERADO
         </h1>
-        <p className="text-[#1b6231] text-sm mb-8 font-medium">
+        <p className="text-[#7ee89a] text-sm mb-8 font-bold">
           Mostre esta tela ao barbeiro.
         </p>
 
@@ -179,7 +175,6 @@ export default function TelaCorte() {
           <div>
             <p className="font-bold text-[15px] text-white tracking-wide">{dados.nome}</p>
             <p className="text-[11px] text-[#3cf072] font-bold uppercase mt-[2px]">{dados.planoNome}</p>
-            <p className="text-[10px] text-[#1b6231] font-bold uppercase mt-[2px]">{dados.tipoCorte}</p>
           </div>
         </div>
 
@@ -198,26 +193,48 @@ export default function TelaCorte() {
         </div>
 
         {podeCancelar && (
-          <button
-            type="button"
-            onClick={cancelarCorte}
-            disabled={cancelando}
-            className="w-full mt-4 bg-[#1b0b0b] border border-red-500/30 text-red-300 px-4 py-3 rounded-xl text-sm font-black disabled:opacity-60"
-          >
-            {cancelando ? 'Cancelando...' : 'Cancelar confirmacao do corte'}
-          </button>
+          <div className="w-full mt-4">
+            {confirmarCancelamento && (
+              <div className="mb-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-left">
+                <p className="text-sm font-black text-red-200">Atenção!</p>
+                <p className="mt-1 text-xs font-medium leading-relaxed text-red-100/85">
+                  Tem certeza que deseja cancelar este corte? O uso do plano será devolvido.
+                </p>
+              </div>
+            )}
+            <div className={confirmarCancelamento ? 'grid grid-cols-2 gap-2' : ''}>
+              {confirmarCancelamento && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmarCancelamento(false)}
+                  disabled={cancelando}
+                  className="w-full border border-[#253329] bg-[#09110b] text-[#9ae8ad] px-4 py-3 rounded-xl text-sm font-black disabled:opacity-60"
+                >
+                  Voltar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={cancelarCorte}
+                disabled={cancelando}
+                className="w-full bg-[#1b0b0b] border border-red-500/30 text-red-300 px-4 py-3 rounded-xl text-sm font-black disabled:opacity-60"
+              >
+                {cancelando ? 'Cancelando...' : confirmarCancelamento ? 'Confirmar' : 'Cancelar confirmação do corte'}
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
       <div className="mt-8 mb-6 text-center">
-        <p className="text-[#2a2a2a] text-[11px] font-medium mb-6">
-          O cancelamento fica disponivel somente dentro do prazo configurado.
+        <p className="text-zinc-400 text-[12px] font-semibold mb-6 leading-relaxed">
+          O cancelamento fica disponível somente dentro do prazo configurado.
         </p>
         <button
           onClick={() => navigate(montarRotaEmpresa(slugEmpresa, '/dashboard'))}
-          className="bg-[#070707] border border-[#1c1c1c] text-[#3f3f3f] px-6 py-2.5 rounded-lg text-sm font-medium hover:text-[#555] transition-colors"
+          className="bg-[#101010] border border-[#2a2a2a] text-zinc-300 px-6 py-2.5 rounded-lg text-sm font-bold hover:text-white transition-colors"
         >
-          Voltar ao inicio
+          Voltar ao início
         </button>
       </div>
 

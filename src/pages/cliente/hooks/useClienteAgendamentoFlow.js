@@ -24,7 +24,7 @@ export default function useClienteAgendamentoFlow({
   const abrirAgendamento = () => {
     setMenuAberto(false);
     if (!agendamentoAtivo) {
-      exibirAlerta('Agendamento IndisponÃ­vel', 'No momento esta barbearia nÃ£o estÃ¡ aceitando agendamento online.');
+      exibirAlerta('Agendamento indisponivel', 'No momento esta barbearia nao esta aceitando agendamento online.');
       return;
     }
     if (tipoCliente === 'ativo') {
@@ -43,7 +43,7 @@ export default function useClienteAgendamentoFlow({
 
   const abrirAgendamentoSemPlano = (servicoId = null) => {
     if (!agendamentoAtivo) {
-      exibirAlerta('Agendamento indisponÃ­vel', 'No momento esta barbearia nÃ£o estÃ¡ aceitando agendamento online para clientes sem plano ativo.');
+      exibirAlerta('Agendamento indisponivel', 'No momento esta barbearia nao esta aceitando agendamento online para clientes sem plano ativo.');
       return;
     }
     if (typeof servicoId !== 'string') {
@@ -58,7 +58,7 @@ export default function useClienteAgendamentoFlow({
 
   const abrirAgendamentoAvulsoPendente = (servicoId = null) => {
     if (!agendamentoAtivo) {
-      exibirAlerta('Agendamento indisponÃ­vel', 'No momento esta barbearia nÃ£o estÃ¡ aceitando agendamento online.');
+      exibirAlerta('Agendamento indisponivel', 'No momento esta barbearia nao esta aceitando agendamento online.');
       return;
     }
     if (typeof servicoId !== 'string') {

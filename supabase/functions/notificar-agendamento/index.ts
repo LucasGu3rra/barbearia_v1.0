@@ -202,7 +202,10 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   const usuarioEhClienteDoAgendamento = agendamento.cliente_id === authData.user.id;
-  if (!vinculo && !usuarioEhClienteDoAgendamento) {
+  const usuarioEhEquipeAutorizada = ["dono", "admin"].includes(vinculo?.papel || "")
+    || agendamento.barbeiros?.user_id === authData.user.id;
+
+  if (!usuarioEhClienteDoAgendamento && !usuarioEhEquipeAutorizada) {
     return jsonResponse({ error: "Usuario sem acesso ao agendamento." }, 403);
   }
 
