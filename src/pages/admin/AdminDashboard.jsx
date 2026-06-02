@@ -15,6 +15,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '../../contexts/useAuth';
+import { signOutWithPushCleanup } from '../../services/authSession';
 import { limparSessaoPreservandoEmpresa, montarRotaEmpresa } from '../../services/empresa';
 import {
   carregarNotificacoesCache,
@@ -32,6 +33,33 @@ const CustomDateInput = forwardRef(({ value, onClick }, ref) => (
     {value}
   </button>
 ));
+
+function AdminDashboardSkeleton() {
+  return (
+    <div className="min-h-screen bg-[#09090b] p-6 pb-28 text-white">
+      <div className="mx-auto w-full max-w-[430px] animate-pulse space-y-5">
+        <div className="flex items-center justify-between pt-4">
+          <div className="h-6 w-36 rounded bg-[#18181b]" />
+          <div className="flex gap-3">
+            <div className="h-10 w-10 rounded-full bg-[#18181b]" />
+            <div className="h-10 w-10 rounded-full bg-[#18181b]" />
+          </div>
+        </div>
+        <div className="h-24 rounded-[22px] border border-[#27272a] bg-[#18181b]" />
+        <div className="grid grid-cols-3 gap-2">
+          <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#18181b]" />
+          <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#18181b]" />
+          <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#18181b]" />
+        </div>
+        <div className="space-y-3">
+          <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#18181b]" />
+          <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#18181b]" />
+          <div className="h-20 rounded-[18px] border border-[#27272a] bg-[#18181b]" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const { user, isAdmin, empresaAtual, loading: authLoading } = useAuth();
@@ -141,9 +169,6 @@ export default function AdminDashboard() {
     if (isManualRefresh) setRefreshing(true);
     
     try {
-      await supabase.rpc('finalizar_agendamentos_vencidos', { p_empresa_id: empresaId });
-      await supabase.rpc('expirar_assinaturas_vencidas');
-
       const { data: dadosPlanos, error: errPlanos } = await supabase
         .from('planos')
         .select('*')
@@ -278,7 +303,7 @@ export default function AdminDashboard() {
   }, [carregarNotificacoes]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOutWithPushCleanup({ empresaId, userId });
     limparSessaoPreservandoEmpresa();
     navigate(montarRotaEmpresa(empresaSlug, ''));
   };
@@ -634,7 +659,7 @@ export default function AdminDashboard() {
     return `Vence ${formatarData(cliente.assinatura?.data_vencimento)}`;
   };
 
-  if (loading) return <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-[#CEAA6B]">Carregando painel...</div>;
+  if (loading) return <AdminDashboardSkeleton />;
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white p-6 font-sans pb-28">

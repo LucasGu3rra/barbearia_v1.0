@@ -5,8 +5,8 @@ import { PwaInstallProvider } from './contexts/PwaInstallContext';
 import { PushNotificationProvider } from './contexts/PushNotificationContext';
 import { useAuth } from './contexts/useAuth';
 import { ProtectedRoute } from './pages/components/ProtectedRoute';
+import { signOutWithPushCleanup } from './services/authSession';
 import { limparSessaoPreservandoEmpresa, montarRotaEmpresa, obterUltimaEmpresaSlug, salvarUltimaEmpresaSlug } from './services/empresa';
-import { supabase } from './services/supabase';
 
 import ClienteLogin from './pages/cliente/auth/ClienteLogin';
 import ClienteCadastro from './pages/cliente/auth/ClienteCadastro';
@@ -63,7 +63,7 @@ const EmpresaAtivaRoute = ({ children }) => {
         if (empresaExiste && user && !resultado.papel) {
           setLimpandoSessao(true);
           limparSessaoPreservandoEmpresa();
-          await supabase.auth.signOut();
+          await signOutWithPushCleanup({ empresaId: resultado.empresa.id, userId: user.id });
           if (ativo) setLimpandoSessao(false);
         }
       } catch {
@@ -114,7 +114,7 @@ const InitialRoute = () => {
         if (empresaExiste && user && !resultado.papel) {
           setLimpandoSessao(true);
           limparSessaoPreservandoEmpresa();
-          await supabase.auth.signOut();
+          await signOutWithPushCleanup({ empresaId: resultado.empresa.id, userId: user.id });
           if (ativo) setLimpandoSessao(false);
         }
       } catch {

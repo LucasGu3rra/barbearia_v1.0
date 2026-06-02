@@ -9,9 +9,7 @@ function TopBar({ onMenu, empresaNome }) {
       <div className="client-brand">
         {empresaNome}
       </div>
-      <button className="ib notif-dot">
-        <Icon name="bell" />
-      </button>
+      <div className="ib invisible" aria-hidden="true" />
     </div>
   );
 }

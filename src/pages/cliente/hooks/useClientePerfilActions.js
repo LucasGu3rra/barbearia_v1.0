@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { signOutWithPushCleanup } from '../../../services/authSession';
 import { limparSessaoPreservandoEmpresa, montarRotaEmpresa } from '../../../services/empresa';
 import { supabase } from '../../../services/supabase';
 
@@ -27,7 +28,7 @@ export default function useClientePerfilActions({
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOutWithPushCleanup({ empresaId, userId: clienteIdAtual() });
     limparSessaoPreservandoEmpresa();
     navigate(montarRotaEmpresa(slugEmpresa, ''));
   };

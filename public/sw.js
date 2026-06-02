@@ -78,7 +78,7 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const title = payload.title || 'Barber System';
+  const title = payload.title || 'BarbeariaClick';
   const options = {
     body: payload.body || 'Voce tem uma nova atualizacao.',
     icon: '/pwa-icon-192.png',

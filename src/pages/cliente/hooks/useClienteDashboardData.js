@@ -51,30 +51,25 @@ export default function useClienteDashboardData({
 
   const carregarDados = useCallback(async (id) => {
     try {
-      if (empresaId) {
-        await supabase.rpc('finalizar_agendamentos_vencidos', { p_empresa_id: empresaId });
-        await supabase.rpc('expirar_assinaturas_vencidas');
-      }
-
       const [
-        { data: todosPlanos },
         { data: dadosPlanos },
         { data: dadosServicos },
         { data: dadosAgendamentos },
         { data: cfg },
         { data: vinculoEmpresa },
       ] = await Promise.all([
-        supabase.from('planos').select('*').eq('empresa_id', empresaId),
-        supabase.from('planos').select('*').eq('empresa_id', empresaId).eq('ativo', true).is('deleted_at', null).order('preco', { ascending: true }),
+        supabase.from('planos').select('*').eq('empresa_id', empresaId).order('preco', { ascending: true }),
         supabase.from('servicos').select('*, servico_categorias(nome), servico_subcategorias(nome)').eq('empresa_id', empresaId).eq('ativo', true).is('deleted_at', null).order('created_at', { ascending: true }),
         supabase.from('agendamentos').select('*, servicos(nome, preco), filiais(nome), barbeiros(nome)').eq('empresa_id', empresaId).eq('cliente_id', id).order('created_at', { ascending: false }).limit(20),
         supabase.from('configuracoes').select('valor').eq('empresa_id', empresaId).eq('chave', 'fluxo_agendamento').maybeSingle(),
         supabase.from('usuarios_empresas').select('created_at').eq('empresa_id', empresaId).eq('user_id', id).maybeSingle(),
       ]);
 
+      const todosPlanos = dadosPlanos || [];
+      const planosAtivos = todosPlanos.filter((plano) => plano.ativo === true && !plano.deleted_at);
       const mapa = {};
-      (todosPlanos || []).forEach(p => { mapa[p.slug] = p; });
-      setPlanosDb(dadosPlanos || []);
+      todosPlanos.forEach(p => { mapa[p.slug] = p; });
+      setPlanosDb(planosAtivos);
       setMapaPlanos(mapa);
       setServicosAvulsos(dadosServicos || []);
       setAgendamentos(dadosAgendamentos || []);

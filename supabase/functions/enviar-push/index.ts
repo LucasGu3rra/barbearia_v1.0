@@ -14,8 +14,7 @@ type PushBody = {
   corpo?: string;
   tipo?: string;
   dados?: Record<string, unknown>;
-  action?: "self_test" | "self_test_delayed" | "send";
-  delay_seconds?: number;
+  action?: "send";
 };
 
 const jsonResponse = (body: unknown, status = 200) => (
@@ -27,8 +26,6 @@ const jsonResponse = (body: unknown, status = 200) => (
     },
   })
 );
-
-const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 const enviarParaDispositivos = async ({
   supabaseAdmin,
@@ -138,10 +135,14 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({})) as PushBody;
   const empresaId = body.empresa_id;
-  const action = body.action || "self_test";
+  const action = body.action || "send";
 
   if (!empresaId) {
     return jsonResponse({ error: "empresa_id obrigatorio." }, 400);
+  }
+
+  if (action !== "send") {
+    return jsonResponse({ error: "Acao indisponivel." }, 400);
   }
 
   const { data: vinculo, error: vinculoError } = await supabaseAdmin
@@ -160,11 +161,9 @@ Deno.serve(async (req) => {
   }
 
   const isAdmin = ["dono", "admin"].includes(vinculo.papel);
-  const targetUserIds = ["self_test", "self_test_delayed"].includes(action)
-    ? [authData.user.id]
-    : [...new Set(body.target_user_ids || [])].slice(0, 50);
+  const targetUserIds = [...new Set(body.target_user_ids || [])].slice(0, 50);
 
-  if (!["self_test", "self_test_delayed"].includes(action) && !isAdmin) {
+  if (!isAdmin) {
     return jsonResponse({ error: "Apenas administradores podem enviar para terceiros." }, 403);
   }
 
@@ -172,7 +171,7 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Nenhum destinatario informado." }, 400);
   }
 
-  const titulo = String(body.titulo || "Barber System").slice(0, 80);
+  const titulo = String(body.titulo || "BarbeariaClick").slice(0, 80);
   const corpo = String(body.corpo || "Voce tem uma nova atualizacao.").slice(0, 180);
   const tipo = String(body.tipo || "geral").slice(0, 40);
   const dados = body.dados && typeof body.dados === "object" ? body.dados : {};
@@ -191,32 +190,6 @@ Deno.serve(async (req) => {
   }
 
   const dispositivos = subscriptions || [];
-
-  if (action === "self_test_delayed") {
-    const delaySeconds = Math.min(Math.max(Number(body.delay_seconds || 60), 10), 300);
-
-    (globalThis as typeof globalThis & { EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void } }).EdgeRuntime.waitUntil((async () => {
-      await sleep(delaySeconds * 1000);
-      await enviarParaDispositivos({
-        supabaseAdmin,
-        subscriptions: dispositivos,
-        targetUserIds,
-        empresaId,
-        titulo,
-        corpo,
-        tipo,
-        dados,
-      });
-    })());
-
-    return jsonResponse({
-      ok: true,
-      scheduled: true,
-      delay_seconds: delaySeconds,
-      targeted_users: targetUserIds.length,
-      devices: dispositivos.length,
-    });
-  }
 
   const { sent, failed } = await enviarParaDispositivos({
     supabaseAdmin,

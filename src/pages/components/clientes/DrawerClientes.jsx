@@ -66,13 +66,25 @@ function MenuButton({ children, badge, onClick, disabled = false, danger = false
   );
 }
 
-function SupportButton({ label, icon, onClick }) {
+function SupportButton({ label, icon, onClick, disabled = false, sub = null }) {
   return (
-    <button type="button" onClick={onClick} className="flex w-full items-center gap-3 rounded-[10px] border border-[#27272a] bg-[#121212] p-3 text-left text-white active:scale-[0.99]">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#2c281b] text-[#d5b451]">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex w-full items-center gap-3 rounded-[10px] border p-3 text-left active:scale-[0.99] ${
+        disabled
+          ? 'cursor-not-allowed border-[#27272a] bg-[#121212]/40 text-zinc-500'
+          : 'border-[#27272a] bg-[#121212] text-white'
+      }`}
+    >
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${disabled ? 'bg-[#181818] text-zinc-600' : 'bg-[#2c281b] text-[#d5b451]'}`}>
         {icon}
       </span>
-      <span className="min-w-0 truncate text-sm font-bold">{label}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-bold">{label}</span>
+        {sub && <span className="mt-0.5 block truncate text-[11px] text-zinc-500">{sub}</span>}
+      </span>
     </button>
   );
 }
@@ -110,8 +122,6 @@ export default function DrawerClientes({
     permission: pushPermission,
     status: pushStatus,
     enablePush,
-    sendTestPush,
-    sendDelayedTestPush,
   } = usePushNotifications();
 
   if (!dados) return null;
@@ -124,16 +134,8 @@ export default function DrawerClientes({
 
   const ativarNotificacoes = async () => {
     if (!pushAvailable) return;
-    if (pushEnabled) {
-      await sendTestPush();
-      return;
-    }
+    if (pushEnabled) return;
     await enablePush();
-  };
-
-  const testarNotificacaoAtrasada = async () => {
-    if (!pushAvailable || !pushEnabled) return;
-    await sendDelayedTestPush();
   };
 
   const abrirPerfil = () => {
@@ -158,7 +160,7 @@ export default function DrawerClientes({
     if (!pushConfigured) return 'Configurar notificações';
     if (!pushSupported) return 'Notificações indisponíveis';
     if (pushPermission === 'denied' || pushStatus === 'denied') return 'Notificações bloqueadas';
-    if (pushEnabled) return 'Enviar teste push';
+    if (pushEnabled) return 'Notificações ativas';
     return 'Ativar notificações';
   })();
 
@@ -166,7 +168,7 @@ export default function DrawerClientes({
     if (!pushConfigured) return 'Env';
     if (!pushSupported) return 'Off';
     if (pushPermission === 'denied' || pushStatus === 'denied') return 'Bloq';
-    if (pushEnabled) return 'Teste';
+    if (pushEnabled) return 'On';
     return 'Push';
   })();
 
@@ -279,7 +281,7 @@ export default function DrawerClientes({
             <div className="space-y-3">
               <SupportButton label="Falar com o barbeiro" icon={<Icon name="message" />} onClick={falarComBarbeiro} />
               <SupportButton label="Configurações" icon={<Icon name="settings" />} onClick={() => setModalConfiguracoesAberto(true)} />
-              <SupportButton label="Reportar um bug" icon={<Icon name="bug" />} onClick={reportarBug} />
+              <SupportButton label="Reportar um bug" sub="Em breve" icon={<Icon name="bug" />} onClick={reportarBug} disabled />
             </div>
           </div>
         </div>
@@ -307,24 +309,13 @@ export default function DrawerClientes({
             <div className="space-y-3">
               <MenuButton
                 onClick={ativarNotificacoes}
-                disabled={!pushVisible || !pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus) || pushPermission === 'denied'}
+                disabled={pushEnabled || !pushVisible || !pushAvailable || pushStatus === 'saving' || pushPermission === 'denied'}
                 badge={notificacaoBadge}
                 icon={<Icon name="bell" />}
-                sub={pushEnabled ? 'Enviar notificação de teste' : 'Receber avisos do sistema'}
+                sub={pushEnabled ? 'Este aparelho recebera avisos' : 'Receber avisos do sistema'}
               >
                 {notificacaoLabel}
               </MenuButton>
-              {pushVisible && pushEnabled && (
-                <MenuButton
-                  onClick={testarNotificacaoAtrasada}
-                  disabled={!pushAvailable || ['saving', 'testing', 'testing-delayed'].includes(pushStatus)}
-                  badge="1 min"
-                  icon={<Icon name="bell" />}
-                  sub="Validação de push com app fechado"
-                >
-                  Teste push em 1 min
-                </MenuButton>
-              )}
               <MenuButton onClick={instalarApp} disabled={!canInstall} badge={canInstall ? 'App' : 'OK'} icon={<Icon name="download" />} sub={canInstall ? 'Adicionar na tela inicial' : 'Instalação indisponível ou já feita'}>
                 Instalar sistema
               </MenuButton>

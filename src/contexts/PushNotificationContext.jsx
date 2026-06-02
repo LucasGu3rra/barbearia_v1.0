@@ -74,62 +74,6 @@ export const PushNotificationProvider = ({ children }) => {
     Promise.resolve().then(() => syncSubscription());
   }, [available, syncSubscription]);
 
-  const sendTestPush = useCallback(async () => {
-    if (!empresaId) return { ok: false, reason: 'missing-context' };
-
-    setStatus('testing');
-
-    const { data, error } = await supabase.functions.invoke('enviar-push', {
-      body: {
-        action: 'self_test',
-        empresa_id: empresaId,
-        titulo: 'Notificacoes ativadas',
-        corpo: 'Este aparelho ja pode receber avisos da barbearia.',
-        tipo: 'teste_push',
-        dados: {
-          url: window.location.pathname || '/',
-        },
-      },
-    });
-
-    if (error) {
-      console.error('Erro ao enviar notificacao de teste:', error);
-      setStatus('error');
-      return { ok: false, reason: 'error', error };
-    }
-
-    setStatus('enabled');
-    return data || { ok: true };
-  }, [empresaId]);
-
-  const sendDelayedTestPush = useCallback(async () => {
-    if (!empresaId) return { ok: false, reason: 'missing-context' };
-
-    setStatus('testing-delayed');
-
-    const { data, error } = await supabase.functions.invoke('teste-push-1min', {
-      body: {
-        delay_seconds: 60,
-        empresa_id: empresaId,
-        titulo: 'Teste com app fechado',
-        corpo: 'Esta notificacao foi enviada 1 minuto depois pelo servidor.',
-        tipo: 'teste_push_atrasado',
-        dados: {
-          url: window.location.pathname || '/',
-        },
-      },
-    });
-
-    if (error) {
-      console.error('Erro ao agendar notificacao de teste:', error);
-      setStatus('error');
-      return { ok: false, reason: 'error', error };
-    }
-
-    setStatus('enabled');
-    return data || { ok: true };
-  }, [empresaId]);
-
   const value = useMemo(() => ({
     available,
     visible,
@@ -139,9 +83,7 @@ export const PushNotificationProvider = ({ children }) => {
     permission,
     status,
     enablePush,
-    sendTestPush,
-    sendDelayedTestPush,
-  }), [available, configured, enabled, enablePush, permission, sendDelayedTestPush, sendTestPush, status, supported, visible]);
+  }), [available, configured, enabled, enablePush, permission, status, supported, visible]);
 
   return (
     <PushNotificationContext.Provider value={value}>

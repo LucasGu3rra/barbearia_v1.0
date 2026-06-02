@@ -18,6 +18,26 @@ import useClientePerfilActions from '../hooks/useClientePerfilActions';
 import useClientePlanos from '../hooks/useClientePlanos';
 import { parseDataSupabase } from '../utils/clienteDashboardUtils';
 
+function ClienteDashboardSkeleton({ empresaNome }) {
+  return (
+    <ClienteShell onMenu={() => {}} empresaNome={empresaNome}>
+      <div className="space-y-4 px-4 py-5 animate-pulse">
+        <div className="h-24 rounded-[18px] border border-[#27272a] bg-[#18181b]" />
+        <div className="h-16 rounded-[16px] border border-[#27272a] bg-[#111111]" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="h-28 rounded-[16px] border border-[#27272a] bg-[#18181b]" />
+          <div className="h-28 rounded-[16px] border border-[#27272a] bg-[#18181b]" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="h-28 rounded-[16px] border border-[#27272a] bg-[#18181b]" />
+          <div className="h-28 rounded-[16px] border border-[#27272a] bg-[#18181b]" />
+        </div>
+        <div className="h-20 rounded-[16px] border border-[#27272a] bg-[#111111]" />
+      </div>
+    </ClienteShell>
+  );
+}
+
 export default function ClienteDashboard() {
   const { user, loading: authLoading, empresaAtual } = useAuth();
   const { empresaSlug } = useParams();
@@ -233,11 +253,7 @@ export default function ClienteDashboard() {
   );
 
   if (loading || !dados) {
-    return (
-      <div className="min-h-screen bg-[#090909] flex items-center justify-center text-[#d5b451] font-bold uppercase tracking-widest text-xs">
-        Carregando...
-      </div>
-    );
+    return <ClienteDashboardSkeleton empresaNome={empresaNome} />;
   }
 
   const pedidoRecente = (() => {

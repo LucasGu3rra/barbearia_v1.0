@@ -66,16 +66,6 @@ export const registerPushSubscription = async ({
   const keys = subscriptionJson.keys || {};
   const now = new Date().toISOString();
 
-  await supabase
-    .from('push_subscriptions')
-    .update({
-      enabled: false,
-      updated_at: now,
-    })
-    .eq('empresa_id', empresaId)
-    .eq('endpoint', subscription.endpoint)
-    .neq('user_id', userId);
-
   const { error } = await supabase
     .from('push_subscriptions')
     .upsert({
@@ -93,4 +83,35 @@ export const registerPushSubscription = async ({
 
   if (error) throw error;
   return { ok: true, permission };
+};
+
+export const disableCurrentPushSubscription = async ({
+  supabase,
+  empresaId,
+  userId,
+}) => {
+  if (!empresaId || !userId) return { ok: false, reason: 'missing-context' };
+  if (!isPushSupported()) return { ok: false, reason: 'unsupported' };
+
+  const registration = await waitForServiceWorker();
+  if (!registration) return { ok: false, reason: 'service-worker-timeout' };
+
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription?.endpoint) return { ok: true, reason: 'no-subscription' };
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('push_subscriptions')
+    .update({
+      enabled: false,
+      updated_at: now,
+    })
+    .eq('empresa_id', empresaId)
+    .eq('user_id', userId)
+    .eq('endpoint', subscription.endpoint);
+
+  if (error) throw error;
+
+  await subscription.unsubscribe().catch(() => false);
+  return { ok: true };
 };
