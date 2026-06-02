@@ -55,6 +55,14 @@ function Input({ label, ...props }) {
   );
 }
 
+const mensagemErroCategoria = (error) => {
+  const mensagem = String(error?.message || '');
+  if (error?.code === '23505' || mensagem.includes('servico_categorias_empresa_id_nome_key') || mensagem.includes('servico_categorias_empresa_nome_ativo_uidx')) {
+    return 'Ja existe uma categoria ativa com esse nome nesta barbearia.';
+  }
+  return mensagem || 'Erro ao salvar categoria.';
+};
+
 export default function ModalServicos({ isOpen, onClose, onRefresh, empresaId }) {
   const [servicos, setServicos] = useState([]);
   const [categorias, setCategorias] = useState([]);
@@ -212,7 +220,7 @@ export default function ModalServicos({ isOpen, onClose, onRefresh, empresaId })
       .single();
 
     setSalvando(false);
-    if (error) return setErro(error.message || 'Erro ao criar categoria.');
+    if (error) return setErro(mensagemErroCategoria(error));
 
     setNovaCategoria('');
     setCategoriaSelecionada(data);
@@ -236,7 +244,7 @@ export default function ModalServicos({ isOpen, onClose, onRefresh, empresaId })
       .eq('empresa_id', empresaId);
 
     setSalvando(false);
-    if (error) return setErro(error.message || 'Erro ao salvar categoria.');
+    if (error) return setErro(mensagemErroCategoria(error));
     await carregarDados();
     if (onRefresh) onRefresh();
   };

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../../services/supabase';
-import { getEmpresaPorSlug, montarRotaEmpresa } from '../../../services/empresa';
+import { montarRotaEmpresa } from '../../../services/empresa';
 
 function EyeIcon({ visible }) {
   return (
@@ -21,6 +21,7 @@ export default function ClienteCadastro() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
+  const [aceitaContatoWhatsapp, setAceitaContatoWhatsapp] = useState(false);
   const [verSenha, setVerSenha] = useState(false);
   const [verConfirmar, setVerConfirmar] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -28,10 +29,10 @@ export default function ClienteCadastro() {
   const { empresaSlug } = useParams();
 
   const handleWhatsappChange = (e) => {
-    let value = e.target.value.replace(/\D/g, "");
+    let value = e.target.value.replace(/\D/g, '');
     if (value.length <= 11) {
-      value = value.replace(/^(\d{2})(\d)/g, "($1) $2");
-      value = value.replace(/(\d{5})(\d)/, "$1-$2");
+      value = value.replace(/^(\d{2})(\d)/g, '($1) $2');
+      value = value.replace(/(\d{5})(\d)/, '$1-$2');
       setWhatsapp(value);
     }
   };
@@ -40,53 +41,54 @@ export default function ClienteCadastro() {
     e.preventDefault();
     if (whatsapp.length < 14) return alert('Insira um WhatsApp válido.');
     if (senha.length < 6) return alert('A senha deve ter no mínimo 6 dígitos.');
-    if (senha !== confirmarSenha) return alert('As senhas não coincidem!');
+    if (senha !== confirmarSenha) return alert('As senhas não coincidem.');
 
     setLoading(true);
 
     try {
       if (!empresaSlug) throw new Error('Use o link completo da barbearia para criar sua conta.');
 
-      const empresa = await getEmpresaPorSlug(empresaSlug);
-      if (!empresa) throw new Error('Empresa não encontrada ou inativa.');
+      const emailNormalizado = email.trim().toLowerCase();
+      const { data: cadastro, error: cadastroError } = await supabase.functions.invoke('criar-cliente-cadastro', {
+        body: {
+          empresa_slug: empresaSlug,
+          nome,
+          whatsapp,
+          aceita_contato_whatsapp: aceitaContatoWhatsapp,
+          email: emailNormalizado,
+          senha,
+        },
+      });
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+      if (cadastroError) throw new Error(cadastro?.error || cadastroError.message);
+      if (!cadastro?.ok || !cadastro?.user_id) throw new Error(cadastro?.error || 'Erro ao criar cadastro.');
+
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email: emailNormalizado,
         password: senha,
       });
 
-      if (authError) throw new Error(authError.message);
-      if (!authData.user) throw new Error('Erro ao criar usuário de autenticação.');
+      if (loginError || !loginData.user) {
+        throw new Error('Cadastro criado. Entre com seu e-mail e senha para continuar.');
+      }
 
-      const userId = authData.user.id;
-
-      const { error: dbError } = await supabase
+      const { error: consentimentoError } = await supabase
         .from('clientes')
-        .insert([{
-          id: userId,
-          nome,
-          whatsapp,
-          email: email.trim().toLowerCase(),
-          empresa_id: empresa.id,
-          eh_admin: false
-        }]);
+        .update({ aceita_contato_whatsapp: aceitaContatoWhatsapp })
+        .eq('id', loginData.user.id)
+        .eq('empresa_id', cadastro.empresa_id);
 
-      if (dbError) throw dbError;
+      if (consentimentoError) {
+        console.warn('Nao foi possivel salvar a preferencia de contato por WhatsApp.', consentimentoError);
+      }
 
-      const { error: vinculoError } = await supabase
-        .from('usuarios_empresas')
-        .insert([{ user_id: userId, empresa_id: empresa.id, papel: 'cliente' }]);
-
-      if (vinculoError) throw vinculoError;
-
-      localStorage.setItem('clienteId', userId);
-      sessionStorage.setItem('clienteId', userId);
-      await supabase.auth.refreshSession();
-      navigate(montarRotaEmpresa(empresa.slug, '/dashboard'));
-
+      localStorage.setItem('clienteId', loginData.user.id);
+      sessionStorage.setItem('clienteId', loginData.user.id);
+      navigate(montarRotaEmpresa(cadastro.empresa_slug || empresaSlug, '/dashboard'));
     } catch (error) {
-      let msg = error.message;
-      if (msg.includes('User already registered')) msg = "Este e-mail já está cadastrado.";
+      const msg = error.message?.includes('User already registered')
+        ? 'Este e-mail já está cadastrado.'
+        : error.message || 'Não foi possível concluir o cadastro.';
       alert('Erro ao cadastrar: ' + msg);
     } finally {
       setLoading(false);
@@ -96,7 +98,7 @@ export default function ClienteCadastro() {
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col items-center pt-6 pb-10 px-6 font-sans">
       <button onClick={() => navigate(empresaSlug ? `/${empresaSlug}` : '/')} className="self-start mb-6 flex items-center gap-2 text-zinc-500 hover:text-white transition-colors">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
         <span className="text-xs font-bold uppercase tracking-widest">Voltar</span>
       </button>
 
@@ -127,8 +129,8 @@ export default function ClienteCadastro() {
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Senha (Mín. 6 dígitos)</label>
             <div className="relative">
-              <input required type={verSenha ? "text" : "password"} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl p-4 outline-none focus:border-[#CEAA6B] text-sm"
-                placeholder="••••••" value={senha} onChange={e => setSenha(e.target.value)} />
+              <input required type={verSenha ? 'text' : 'password'} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl p-4 outline-none focus:border-[#CEAA6B] text-sm"
+                placeholder="******" value={senha} onChange={e => setSenha(e.target.value)} />
               <button type="button" onClick={() => setVerSenha(!verSenha)} className="absolute right-4 top-4 text-zinc-600">
                 <EyeIcon visible={verSenha} />
               </button>
@@ -138,13 +140,25 @@ export default function ClienteCadastro() {
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Confirmar Senha</label>
             <div className="relative">
-              <input required type={verConfirmar ? "text" : "password"} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl p-4 outline-none focus:border-[#CEAA6B] text-sm"
-                placeholder="••••••" value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)} />
+              <input required type={verConfirmar ? 'text' : 'password'} className="w-full bg-[#09090b] border border-[#27272a] rounded-xl p-4 outline-none focus:border-[#CEAA6B] text-sm"
+                placeholder="******" value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)} />
               <button type="button" onClick={() => setVerConfirmar(!verConfirmar)} className="absolute right-4 top-4 text-zinc-600">
                 <EyeIcon visible={verConfirmar} />
               </button>
             </div>
           </div>
+
+          <label className="flex items-start gap-3 rounded-2xl border border-[#27272a] bg-[#09090b] p-4 text-left">
+            <input
+              type="checkbox"
+              checked={aceitaContatoWhatsapp}
+              onChange={(e) => setAceitaContatoWhatsapp(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[#CEAA6B]"
+            />
+            <span className="text-xs font-medium leading-relaxed text-zinc-300">
+              Aceito receber contato da barbearia pelo WhatsApp.
+            </span>
+          </label>
 
           <button type="submit" disabled={loading} className="w-full bg-[#CEAA6B] text-black font-bold py-4 rounded-2xl mt-4 active:scale-95 transition-all">
             {loading ? 'Criando conta...' : 'Finalizar Cadastro'}

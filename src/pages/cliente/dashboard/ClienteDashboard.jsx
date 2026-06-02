@@ -47,7 +47,6 @@ export default function ClienteDashboard() {
 
   const [menuAberto, setMenuAberto] = useState(false);
   const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
-  const LIMITE_ALTERACOES = 2;
 
   const CHAVE_PIX = empresaAtual?.chave_pix || '81988468182';
   const WHATSAPP_JOAO = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '5581988468182');
@@ -134,18 +133,11 @@ export default function ClienteDashboard() {
   });
 
   const {
-    editandoNome,
-    setEditandoNome,
-    novoNome,
-    setNovoNome,
     fecharMenu,
-    salvarNovoNome,
     handleLogout,
   } = useClientePerfilActions({
-    dados,
     empresaId,
     clienteIdAtual,
-    carregarDados,
     navigate,
     slugEmpresa,
     setMenuAberto,
@@ -227,12 +219,6 @@ export default function ClienteDashboard() {
         isOpen={menuAberto}
         onClose={fecharMenu}
         dados={dados}
-        editandoNome={editandoNome}
-        setEditandoNome={setEditandoNome}
-        novoNome={novoNome}
-        setNovoNome={setNovoNome}
-        salvarNovoNome={salvarNovoNome}
-        LIMITE_ALTERACOES={LIMITE_ALTERACOES}
         planosDb={planosDb}
         alterarPlano={alterarPlano}
         cancelarAgendamento={cancelarAgendamento}

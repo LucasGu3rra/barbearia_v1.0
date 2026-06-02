@@ -536,6 +536,7 @@ export default function AdminDashboard() {
   }
 
   const listaCortesFiltrada = cortesGerais.filter(corte => {
+    if (String(corte.status || 'feito').toLowerCase().startsWith('cancelad')) return false;
     if (!dataFiltro) return true; 
     const d = new Date(corte.created_at);
     return d.getDate() === dataFiltro.getDate() && d.getMonth() === dataFiltro.getMonth() && d.getFullYear() === dataFiltro.getFullYear();

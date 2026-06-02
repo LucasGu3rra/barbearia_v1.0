@@ -93,12 +93,6 @@ export default function DrawerClientes({
   isOpen,
   onClose,
   dados,
-  editandoNome,
-  setEditandoNome,
-  novoNome,
-  setNovoNome,
-  salvarNovoNome,
-  LIMITE_ALTERACOES,
   planosDb,
   alterarPlano,
   cancelarAgendamento,
@@ -140,8 +134,6 @@ export default function DrawerClientes({
 
   const abrirPerfil = () => {
     setModalPerfilAberto(true);
-    setEditandoNome(false);
-    setNovoNome(dados.nome || '');
   };
 
   const falarComBarbeiro = () => {
@@ -172,8 +164,6 @@ export default function DrawerClientes({
     return 'Push';
   })();
 
-  const statusLabel = dados.status === 'ativa' ? 'Ativa' : dados.status ? 'Pendente' : 'Sem plano ativo';
-  const statusClass = dados.status === 'ativa' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : dados.status ? 'text-orange-400 bg-orange-500/10 border-orange-500/20' : 'text-zinc-500 bg-[#171717] border-[#333]';
   const planoPendente = tipoCliente === 'pendente' || dados.status === 'pendente';
 
   return (
@@ -189,9 +179,9 @@ export default function DrawerClientes({
               </div>
               <div className="min-w-0">
                 <h2 className="truncate text-lg font-black text-white" title={dados.nome}>{formatarNomeVisivel(dados.nome)}</h2>
-                <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest ${statusClass}`}>
-                  {statusLabel}
-                </span>
+                <p className="mt-1 max-w-[180px] truncate text-xs font-medium text-zinc-500" title={dados.email || ''}>
+                  {dados.email || 'E-mail não informado'}
+                </p>
               </div>
             </div>
             <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#333] bg-[#181818] text-zinc-500 active:scale-95">
@@ -330,7 +320,6 @@ export default function DrawerClientes({
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#d5b451]">Conta</p>
-                <h3 className="mt-1 text-xl font-black text-white">Meu perfil</h3>
               </div>
               <button type="button" onClick={() => setModalPerfilAberto(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1c1c1c] text-zinc-500">
                 x
@@ -343,51 +332,13 @@ export default function DrawerClientes({
               </div>
               <div className="min-w-0">
                 <p className="truncate text-base font-black text-white">{formatarNomeVisivel(dados.nome)}</p>
-                <p className="mt-1 text-xs text-zinc-500">{statusLabel}</p>
+                <p className="mt-1 max-w-[230px] truncate text-xs text-zinc-500" title={dados.email || ''}>
+                  {dados.email || 'E-mail não informado'}
+                </p>
               </div>
             </div>
 
             <div className="space-y-3">
-              <div className="rounded-[14px] border border-[#27272a] bg-[#121212] p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Nome do cliente</p>
-                  {!editandoNome && dados.alteracoesNome < LIMITE_ALTERACOES && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditandoNome(true);
-                        setNovoNome(dados.nome);
-                      }}
-                      className="text-[10px] font-bold uppercase tracking-widest text-[#d5b451]"
-                    >
-                      Editar
-                    </button>
-                  )}
-                </div>
-
-                {editandoNome ? (
-                  <div>
-                    <p className="mb-3 text-[9px] font-bold uppercase tracking-widest text-orange-400">
-                      Restam {LIMITE_ALTERACOES - dados.alteracoesNome} alterações
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        autoFocus
-                        value={novoNome}
-                        onChange={(event) => setNovoNome(event.target.value)}
-                        placeholder="Digite seu nome completo"
-                        className="min-w-0 flex-1 rounded-lg border border-[#333] bg-[#090909] px-3 py-2 text-sm text-white outline-none focus:border-[#d5b451]/60"
-                      />
-                      <button type="button" onClick={salvarNovoNome} className="rounded-lg bg-[#d5b451] px-4 py-2 text-xs font-bold text-black">
-                        Salvar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="truncate text-sm font-bold text-white">{dados.nome}</p>
-                )}
-              </div>
-
               <MenuButton onClick={onRedefinirSenha} icon={<Icon name="lock" />} sub="Alterar ou recuperar acesso">
                 Trocar senha
               </MenuButton>
