@@ -20,35 +20,43 @@ export default function RedefinirSenha() {
   useEffect(() => {
     let ativo = true;
 
-    const validarSessao = async () => {
+    const linkTemCodigoDeRecuperacao = () => {
+      const params = new URLSearchParams(window.location.search);
+      const hash = window.location.hash || '';
+
+      return Boolean(
+        params.get('code') ||
+        hash.includes('access_token') ||
+        hash.includes('type=recovery') ||
+        window.location.href.includes('type=recovery')
+      );
+    };
+
+    const validarSessao = async (tentativasRestantes = 5) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!ativo) return;
 
       if (session) {
         setSessaoValida(true);
+        setMensagem(null);
         return;
       }
 
-      window.setTimeout(async () => {
-        const { data: { session: sessaoAtrasada } } = await supabase.auth.getSession();
-        if (!ativo) return;
+      if (tentativasRestantes > 0 && linkTemCodigoDeRecuperacao()) {
+        window.setTimeout(() => validarSessao(tentativasRestantes - 1), 800);
+        return;
+      }
 
-        if (sessaoAtrasada) {
-          setSessaoValida(true);
-          return;
-        }
-
-        setSessaoValida(false);
-        setMensagem({
-          tipo: 'erro',
-          texto: 'Link invalido ou expirado. Solicite a recuperacao novamente.',
-        });
-      }, 800);
+      setSessaoValida(false);
+      setMensagem({
+        tipo: 'erro',
+        texto: 'Link invalido ou expirado. Solicite a recuperacao novamente.',
+      });
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!ativo) return;
-      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session) {
+      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         setSessaoValida(true);
         setMensagem(null);
       }
@@ -82,8 +90,19 @@ export default function RedefinirSenha() {
       setMensagem({ tipo: 'sucesso', texto: 'Senha atualizada com sucesso. Redirecionando para o login...' });
 
       window.setTimeout(async () => {
-        await signOutWithPushCleanup({ empresaId: empresaAtual?.id, userId: user?.id });
-        navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+
+          await signOutWithPushCleanup({
+            empresaId: empresaAtual?.id,
+            userId: user?.id || session?.user?.id,
+          });
+        } catch (logoutError) {
+          console.error('Erro ao finalizar sessao apos redefinir senha:', logoutError);
+          await supabase.auth.signOut();
+        } finally {
+          navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '/login') : '/');
+        }
       }, 3000);
     } catch (error) {
       setMensagem({ tipo: 'erro', texto: 'Erro ao salvar a nova senha: ' + error.message });

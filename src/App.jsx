@@ -84,6 +84,46 @@ const EmpresaAtivaRoute = ({ children }) => {
   return children;
 };
 
+
+const EmpresaPublicaRoute = ({ children }) => {
+  const { empresaSlug } = useParams();
+  const { selecionarEmpresaPorSlug } = useAuth();
+  const [slugValido, setSlugValido] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+
+    const prepararEmpresa = async () => {
+      if (!empresaSlug) {
+        if (ativo) setSlugValido(false);
+        return;
+      }
+
+      try {
+        const resultado = await selecionarEmpresaPorSlug(empresaSlug);
+        if (!ativo) return;
+
+        const empresaExiste = Boolean(resultado.empresa);
+        setSlugValido(empresaExiste);
+        if (empresaExiste) salvarUltimaEmpresaSlug(resultado.empresa.slug);
+      } catch {
+        if (ativo) setSlugValido(false);
+      }
+    };
+
+    prepararEmpresa();
+
+    return () => {
+      ativo = false;
+    };
+  }, [empresaSlug, selecionarEmpresaPorSlug]);
+
+  if (slugValido === null) return null;
+  if (!slugValido) return <AcessoPorLink />;
+
+  return children;
+};
+
 const InitialRoute = () => {
   const { empresaSlug } = useParams();
   const { user, isAdmin, empresaAtual, selecionarEmpresaPorSlug } = useAuth();
@@ -173,9 +213,9 @@ export default function App() {
 
               <Route path="/:empresaSlug/login" element={<InitialRoute />} />
               <Route path="/:empresaSlug" element={<InitialRoute />} />
-              <Route path="/:empresaSlug/cadastro" element={<EmpresaAtivaRoute><ClienteCadastro /></EmpresaAtivaRoute>} />
-              <Route path="/:empresaSlug/esqueci-senha" element={<EmpresaAtivaRoute><EsqueciSenha /></EmpresaAtivaRoute>} />
-              <Route path="/:empresaSlug/redefinir-senha" element={<EmpresaAtivaRoute><RedefinirSenha /></EmpresaAtivaRoute>} />
+              <Route path="/:empresaSlug/cadastro" element={<EmpresaPublicaRoute><ClienteCadastro /></EmpresaPublicaRoute>} />
+              <Route path="/:empresaSlug/esqueci-senha" element={<EmpresaPublicaRoute><EsqueciSenha /></EmpresaPublicaRoute>} />
+              <Route path="/:empresaSlug/redefinir-senha" element={<EmpresaPublicaRoute><RedefinirSenha /></EmpresaPublicaRoute>} />
               <Route path="/:empresaSlug/planos" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['cliente']}><EscolhaPlano /></ProtectedRoute></EmpresaAtivaRoute>} />
               <Route path="/:empresaSlug/admin/dashboard" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['dono', 'admin']}><AdminDashboard /></ProtectedRoute></EmpresaAtivaRoute>} />
               <Route path="/:empresaSlug/barbeiro/dashboard" element={<EmpresaAtivaRoute><ProtectedRoute allowedRoles={['barbeiro']}><BarbeiroDashboard /></ProtectedRoute></EmpresaAtivaRoute>} />
