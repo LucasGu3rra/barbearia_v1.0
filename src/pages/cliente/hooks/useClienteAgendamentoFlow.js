@@ -140,11 +140,9 @@ export default function useClienteAgendamentoFlow({
     }
 
     exibirConfirmacao('Cancelar agendamento', 'Deseja cancelar este agendamento?', async () => {
-      const { error } = await supabase
-        .from('agendamentos')
-        .update({ status: 'cancelado' })
-        .eq('id', agendamento.id)
-        .eq('cliente_id', clienteIdAtual());
+      const { error } = await supabase.rpc('cancelar_agendamento_cliente', {
+        p_agendamento_id: agendamento.id,
+      });
 
       if (error) {
         exibirAlerta('Erro', 'Nao foi possivel cancelar o agendamento.');

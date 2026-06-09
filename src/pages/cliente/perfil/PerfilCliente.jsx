@@ -49,11 +49,10 @@ export default function PerfilCliente() {
     if (window.confirm(mensagem)) {
       const id = user?.id;
       if (!id) return;
-      const { error } = await supabase
-        .from('assinaturas')
-        .update({ plano_escolhido: novoPlano })
-        .eq('empresa_id', empresaId)
-        .eq('cliente_id', id);
+      const { error } = await supabase.rpc('solicitar_plano_cliente', {
+        p_empresa_id: empresaId,
+        p_plano_slug: novoPlano,
+      });
 
       if (!error) {
         alert("Plano alterado com sucesso!");

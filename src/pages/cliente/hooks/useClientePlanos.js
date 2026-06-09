@@ -24,22 +24,42 @@ export default function useClientePlanos({
     setTimeout(() => setPixCopiado(false), 3000);
   };
 
-  const atualizarAssinatura = async (payload) => {
-    await supabase
-      .from('assinaturas')
-      .update(payload)
-      .eq('empresa_id', empresaId)
-      .eq('cliente_id', clienteIdAtual());
+  const solicitarPlano = async (planoSlug) => {
+    const { error } = await supabase.rpc('solicitar_plano_cliente', {
+      p_empresa_id: empresaId,
+      p_plano_slug: planoSlug,
+    });
+
+    if (error) throw error;
+    carregarDados(clienteIdAtual());
+  };
+
+  const solicitarMudancaPlano = async (planoSlug) => {
+    const { error } = await supabase.rpc('solicitar_mudanca_plano_cliente', {
+      p_empresa_id: empresaId,
+      p_plano_slug: planoSlug,
+    });
+
+    if (error) throw error;
+    carregarDados(clienteIdAtual());
+  };
+
+  const cancelarMudancaPlano = async () => {
+    const { error } = await supabase.rpc('cancelar_mudanca_plano_cliente', {
+      p_empresa_id: empresaId,
+    });
+
+    if (error) throw error;
     carregarDados(clienteIdAtual());
   };
 
   const efetuarMudancaPlanoDireta = async (novoPlano) => {
-    await atualizarAssinatura({ plano_escolhido: novoPlano });
+    await solicitarPlano(novoPlano);
   };
 
   const efetuarAgendamentoDowngrade = async (proximo) => {
     fecharModalAlerta();
-    await atualizarAssinatura({ proximo_plano: proximo });
+    await solicitarMudancaPlano(proximo);
   };
 
   const prepararUpgrade = (planoUpgrade, valorDiferenca) => {
@@ -79,7 +99,7 @@ export default function useClientePlanos({
       `Deseja cancelar a mudança agendada e manter seu plano atual (${dados.planoNome})?`,
       async () => {
         fecharModalAlerta();
-        await atualizarAssinatura({ proximo_plano: null });
+        await cancelarMudancaPlano();
       }
     );
   };
@@ -97,11 +117,12 @@ export default function useClientePlanos({
 
     if (isUpgrade) {
       mensagem += `Estou solicitando o upgrade para o plano *${mapaPlanos[dados.planoUpgradeId].nome}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
-      await supabase
-        .from('assinaturas')
-        .update({ upgrade_pendente: dados.planoUpgradeId })
-        .eq('empresa_id', empresaId)
-        .eq('cliente_id', clienteIdAtual());
+      const { error } = await supabase.rpc('solicitar_upgrade_plano_cliente', {
+        p_empresa_id: empresaId,
+        p_plano_slug: dados.planoUpgradeId,
+      });
+
+      if (error) throw error;
     } else {
       mensagem += `Estou solicitando a ativação do *Plano ${dados.planoNome}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
       localStorage.setItem(`pagamento_plano_${empresaId}_${clienteIdAtual()}_${dados.planoId || 'sem-plano'}`, 'iniciado');
