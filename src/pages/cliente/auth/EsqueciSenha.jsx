@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../../services/supabase';
-import { montarRotaEmpresa } from '../../../services/empresa';
+import { montarRotaEmpresa, montarUrlPublicaEmpresa } from '../../../services/empresa';
 
 export default function EsqueciSenha() {
   const location = useLocation();
@@ -22,7 +22,7 @@ export default function EsqueciSenha() {
 
     try {
       // O Supabase dispara o e-mail e redireciona o usuário de volta para o app
-      const redirectTo = `${window.location.origin}${montarRotaEmpresa(empresaSlug, '/redefinir-senha')}`;
+      const redirectTo = montarUrlPublicaEmpresa(empresaSlug, '/redefinir-senha');
       const { error } = await supabase.auth.resetPasswordForEmail(emailNormalizado, { redirectTo });
 
       if (error) throw error;

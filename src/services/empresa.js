@@ -64,6 +64,13 @@ export const montarRotaEmpresa = (slug, rota = '') => {
   return `/${slugFinal}${rotaFinal}`;
 };
 
+export const montarUrlPublicaEmpresa = (slug, rota = '') => {
+  const origemConfigurada = String(import.meta.env.VITE_APP_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  const origemAtual = typeof window !== 'undefined' ? window.location.origin : '';
+  const origem = origemConfigurada || origemAtual;
+  return `${origem}${montarRotaEmpresa(slug, rota)}`;
+};
+
 export const normalizarTelefoneBrasil = (valor) => {
   const numeros = String(valor || '').replace(/\D/g, '');
   if (!numeros) return '';
