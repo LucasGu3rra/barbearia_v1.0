@@ -135,6 +135,7 @@ function Recorrente({
   const ultimo = ultimoServico;
   const temAgendamentoAtivo = Boolean(proximoAgendamento);
   const semHistorico = Number(servicosFeitos ?? historicoCompleto.length) === 0;
+  const podeAbrirPlanos = typeof onAbrirPlanos === 'function';
 
   return (
     <div className="page on">
@@ -175,7 +176,7 @@ function Recorrente({
           <InfoCard label="Status" title="Sem plano ativo" tone="muted" />
         </div>
 
-        <div className={`grid gap-3 ${temAgendamentoAtivo || temPlanos ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className={`grid gap-3 ${temAgendamentoAtivo || podeAbrirPlanos ? 'grid-cols-2' : 'grid-cols-1'}`}>
           {temAgendamentoAtivo ? (
             <>
               <ActionCard
@@ -202,11 +203,11 @@ function Recorrente({
               disabled={!agendamentoAtivo}
             />
           )}
-          {temPlanos && !temAgendamentoAtivo && (
+          {podeAbrirPlanos && !temAgendamentoAtivo && (
             <ActionCard
               icon="crown"
               title="Ver planos"
-              subtitle="economia para recorrencia"
+              subtitle={temPlanos ? 'planos mensais' : 'consultar planos'}
               onClick={onAbrirPlanos}
             />
           )}

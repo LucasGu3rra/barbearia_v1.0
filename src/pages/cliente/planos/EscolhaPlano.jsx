@@ -152,24 +152,12 @@ export default function EscolhaPlano() {
       const empresaSlugDestino = empresa?.slug || empresaAtual?.slug || empresaSlug;
       if (!empresaId || !empresaSlugDestino) throw new Error('Empresa inválida.');
 
-      const { data: assinaturaExistente } = await supabase
-        .from('assinaturas')
-        .select('*')
-        .eq('empresa_id', empresaId)
-        .eq('cliente_id', clienteId)
-        .maybeSingle();
+      const { error: assinaturaError } = await supabase.rpc('solicitar_plano_cliente', {
+        p_empresa_id: empresaId,
+        p_plano_slug: planoSelecionado.slug,
+      });
 
-      if (assinaturaExistente) {
-        await supabase
-          .from('assinaturas')
-          .update({ plano_escolhido: planoSelecionado.slug, status: 'pendente' })
-          .eq('empresa_id', empresaId)
-          .eq('cliente_id', clienteId);
-      } else {
-        await supabase
-          .from('assinaturas')
-          .insert([{ cliente_id: clienteId, empresa_id: empresaId, plano_escolhido: planoSelecionado.slug, status: 'pendente' }]);
-      }
+      if (assinaturaError) throw assinaturaError;
 
       if (enviarWhatsapp) {
         const mensagem = `Olá! Me chamo *${nomeCliente}*.\nAcabei de solicitar o *Plano ${planoSelecionado.nome}* no aplicativo.\n\nForma de pagamento: *PIX*\nSegue o meu comprovante abaixo:`;
