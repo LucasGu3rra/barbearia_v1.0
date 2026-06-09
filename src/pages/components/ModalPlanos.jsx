@@ -38,77 +38,95 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
     if (isOpen && empresaId) buscarPlanos();
   }, [isOpen, empresaId, buscarPlanos]);
 
+  const validarPlano = (plano) => {
+    const nomeValido = String(plano.nome || '').trim().length > 0;
+    const precoPreenchido = String(plano.preco ?? '').trim().length > 0;
+    const limitePreenchido = Boolean(plano.ilimitado) || String(plano.limite ?? '').trim().length > 0;
+    const duracaoPreenchida = String(plano.duracao_minutos ?? '').trim().length > 0;
+    const precoValido = precoPreenchido && Number.isFinite(Number(plano.preco)) && Number(plano.preco) >= 0;
+    const limiteValido = Boolean(plano.ilimitado) || (limitePreenchido && Number.isInteger(Number(plano.limite)) && Number(plano.limite) > 0);
+    const duracaoValida = duracaoPreenchida && Number.isInteger(Number(plano.duracao_minutos)) && Number(plano.duracao_minutos) > 0;
+
+    return nomeValido && precoValido && limiteValido && duracaoValida;
+  };
+
+  const dadosPlanoParaSalvar = (plano) => ({
+    nome: String(plano.nome || '').trim(),
+    preco: Number(plano.preco),
+    limite: plano.ilimitado ? 0 : Number(plano.limite),
+    duracao_minutos: Number(plano.duracao_minutos),
+    servico_id: null,
+    ilimitado: Boolean(plano.ilimitado),
+    ativo: Boolean(plano.ativo)
+  });
+
+  const salvarPlano = async (plano) => {
+    if (plano._novo) {
+      const { data, error } = await supabase
+        .from('planos')
+        .insert([{
+          empresa_id: empresaId,
+          slug: criarSlugPlano(plano.nome),
+          ...dadosPlanoParaSalvar(plano),
+        }])
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return data;
+    }
+
+    const { error } = await supabase
+      .from('planos')
+      .update(dadosPlanoParaSalvar(plano))
+      .eq('id', plano.id)
+      .eq('empresa_id', empresaId);
+
+    if (error) throw error;
+    return plano;
+  };
+
   const handleInputChange = (id, campo, valor) => {
-    setPlanos(planos.map(p => p.id === id ? { ...p, [campo]: valor } : p));
+    setPlanos((planosAtuais) => planosAtuais.map(p => p.id === id ? { ...p, [campo]: valor } : p));
   };
 
   const adicionarPlano = async () => {
     if (adicionando) return;
     setErroOperacao('');
     setAdicionando(true);
-    const nome = 'Novo Plano';
-    const slug = criarSlugPlano(nome);
-    const { data, error } = await supabase
-      .from('planos')
-      .insert([{
-        empresa_id: empresaId,
-        slug,
-        nome,
-        preco: 0,
-        limite: 1,
-        duracao_minutos: 30,
-        ilimitado: false,
-        ativo: true,
-      }])
-      .select('*')
-      .single();
+    const idTemporario = `novo-${Date.now().toString(36)}`;
 
-    if (error) {
-      setErroOperacao('Nao foi possivel adicionar o plano. Tente novamente.');
-      setAdicionando(false);
-      return;
-    }
-
-    setPlanos([...planos, data]);
-    setPlanoAbertoId(data.id);
+    setPlanos((planosAtuais) => [...planosAtuais, {
+      id: idTemporario,
+      _novo: true,
+      nome: 'Novo Plano',
+      preco: '',
+      limite: '',
+      duracao_minutos: '',
+      ilimitado: false,
+      ativo: true,
+    }]);
+    setPlanoAbertoId(idTemporario);
     setAdicionando(false);
   };
 
   const salvarAlteracoes = async () => {
     setErroOperacao('');
-    const planoInvalido = planos.find((plano) => {
-      const nomeValido = String(plano.nome || '').trim().length > 0;
-      const precoValido = Number.isFinite(Number(plano.preco)) && Number(plano.preco) >= 0;
-      const limiteValido = Boolean(plano.ilimitado) || (Number.isInteger(Number(plano.limite)) && Number(plano.limite) > 0);
-      const duracaoValida = Number.isInteger(Number(plano.duracao_minutos)) && Number(plano.duracao_minutos) > 0;
-      return !nomeValido || !precoValido || !limiteValido || !duracaoValida;
-    });
+    const planoInvalido = planos.find((plano) => !validarPlano(plano));
 
     if (planoInvalido) {
-      setErroOperacao('Revise os planos: nome, valor, duracao e limite precisam ser validos.');
+      setErroOperacao('Preencha nome, preco, duracao e limite dos planos antes de salvar.');
       setPlanoAbertoId(planoInvalido.id);
       return;
     }
 
     setSalvando(true);
     try {
+      const planosSalvos = [];
       for (const plano of planos) {
-        const { error } = await supabase
-          .from('planos')
-          .update({
-            nome: String(plano.nome || '').trim(),
-            preco: Number(plano.preco),
-            limite: plano.ilimitado ? 0 : Number(plano.limite),
-            duracao_minutos: Number(plano.duracao_minutos),
-            servico_id: null,
-            ilimitado: Boolean(plano.ilimitado),
-            ativo: Boolean(plano.ativo)
-          })
-          .eq('id', plano.id)
-          .eq('empresa_id', empresaId);
-        
-        if (error) throw error;
+        planosSalvos.push(await salvarPlano(plano));
       }
+      setPlanos(planosSalvos);
       onRefresh(); // Atualiza os dados no dashboard principal
       onClose();   // Fecha o modal
     } catch (error) {
@@ -120,19 +138,41 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
 
   const excluirPlano = async (plano) => {
     if (!window.confirm(`Excluir o plano "${plano.nome}"? Clientes com esse plano podem ficar sem referência.`)) return;
-    const { error } = await supabase
-      .from('planos')
-      .update({ ativo: false, deleted_at: new Date().toISOString() })
-      .eq('id', plano.id)
-      .eq('empresa_id', empresaId);
+    setErroOperacao('');
+    const outrosPlanos = planos.filter((planoAtual) => planoAtual.id !== plano.id);
+    const planoInvalido = outrosPlanos.find((planoAtual) => !validarPlano(planoAtual));
 
-    if (error) {
-      alert('Erro ao excluir plano: ' + error.message);
+    if (planoInvalido) {
+      setErroOperacao('Preencha nome, preco, duracao e limite dos outros planos antes de excluir.');
+      setPlanoAbertoId(planoInvalido.id);
       return;
     }
 
-    await buscarPlanos();
-    if (onRefresh) onRefresh();
+    setSalvando(true);
+    try {
+      const planosSalvos = [];
+      for (const planoAtual of outrosPlanos) {
+        planosSalvos.push(await salvarPlano(planoAtual));
+      }
+
+      if (!plano._novo) {
+        const { error } = await supabase
+          .from('planos')
+          .update({ ativo: false, deleted_at: new Date().toISOString() })
+          .eq('id', plano.id)
+          .eq('empresa_id', empresaId);
+
+        if (error) throw error;
+      }
+
+      setPlanos(planosSalvos);
+      if (planoAbertoId === plano.id) setPlanoAbertoId(null);
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      alert('Erro ao excluir plano: ' + error.message);
+    } finally {
+      setSalvando(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -184,7 +224,7 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
                     <div className="min-w-0">
                       <h4 className="text-white text-[15px] font-black truncate">{aberto ? `Editando: ${plano.nome}` : plano.nome}</h4>
                       <p className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest mt-1.5">
-                        R$ {Number(plano.preco || 0).toFixed(0)} · {plano.ilimitado ? 'Ilimitado' : `${plano.limite} cortes`} · {plano.duracao_minutos || 30} min
+                        R$ {Number(plano.preco || 0).toFixed(0)} · {plano.ilimitado ? 'Ilimitado' : `${plano.limite || 0} cortes`} · {plano.duracao_minutos || 0} min
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -240,7 +280,7 @@ export default function ModalPlanos({ isOpen, onClose, onRefresh, empresaId }) {
                           <input
                             type="number"
                             min="1"
-                            value={plano.duracao_minutos || 30}
+                            value={plano.duracao_minutos ?? ''}
                             onChange={(e) => handleInputChange(plano.id, 'duracao_minutos', e.target.value)}
                             className="w-full h-8 bg-[#121212] border border-[#27272a] rounded-[10px] px-2.5 text-white text-sm font-bold focus:border-[#CEAA6B]/50 outline-none transition-colors"
                           />
