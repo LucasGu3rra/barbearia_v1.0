@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/useAuth';
 import { usePwaInstall } from '../../contexts/usePwaInstall';
 import { usePushNotifications } from '../../contexts/usePushNotifications';
 import { signOutWithPushCleanup } from '../../services/authSession';
-import { montarRotaEmpresa } from '../../services/empresa';
+import { montarRotaEmpresa, montarUrlPublicaEmpresa } from '../../services/empresa';
 import {
   carregarNotificacoesCache,
   limparNotificacoesCache,
@@ -889,7 +889,7 @@ export default function BarbeiroDashboard() {
         onClose={() => setPerfilAberto(false)}
         barbeiro={barbeiro}
         user={user}
-        redirectRecuperacao={`${window.location.origin}${montarRotaEmpresa(empresaSlug, '/redefinir-senha')}`}
+        redirectRecuperacao={montarUrlPublicaEmpresa(empresaSlug, '/redefinir-senha')}
       />
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes barbeiroAgendaIn {
