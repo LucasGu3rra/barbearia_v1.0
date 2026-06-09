@@ -74,7 +74,7 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [planosInfo, setPlanosInfo] = useState({});
   
-  const [abaAtiva, setAbaAtiva] = useState('agenda'); 
+  const [abaAtiva, setAbaAtiva] = useState('ativos');
   const [filtroAgenda, setFiltroAgenda] = useState('agendados');
   const [busca, setBusca] = useState('');
   
@@ -96,6 +96,7 @@ export default function AdminDashboard() {
   const [limpandoNotificacoes, setLimpandoNotificacoes] = useState(false);
   const [novosClientes, setNovosClientes] = useState(0);
   const [novosAgendamentos, setNovosAgendamentos] = useState(0);
+  const [novosCortes, setNovosCortes] = useState(0);
 
   const navigate = useNavigate();
  
@@ -275,6 +276,10 @@ export default function AdminDashboard() {
         if (payload.eventType === 'INSERT') setNovosAgendamentos((total) => total + 1);
         carregarDados();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_cortes', filter: filtroEmpresa }, (payload) => {
+        if (payload.eventType === 'INSERT') setNovosCortes((total) => total + 1);
+        carregarDados();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'configuracoes', filter: filtroEmpresa }, () => carregarDados())
       .subscribe();
 
@@ -295,6 +300,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (abaAtiva === 'agenda') setNovosAgendamentos(0);
+    if (abaAtiva === 'historico') setNovosCortes(0);
     if (!['agenda', 'historico'].includes(abaAtiva)) setNovosClientes(0);
   }, [abaAtiva]);
 
@@ -491,6 +497,7 @@ export default function AdminDashboard() {
   const clientesVencendo = clientesProcessados.filter(c => c.classificacao === 'vencendo');
   const clientesInativos = clientesProcessados.filter(c => c.classificacao === 'inativo');
   const clientesAvulsos = clientesProcessados.filter(c => c.classificacao === 'avulso');
+  const novosItensPrimeiraAba = agendamentoAtivo ? novosAgendamentos : novosCortes;
 
   const aguardandoAtivacao = [];
   clientes.forEach(cliente => {
@@ -676,6 +683,7 @@ export default function AdminDashboard() {
         onOpenServicos={() => setModalServicosAberto(true)}
         onOpenConfiguracoes={() => setModalConfiguracoesAberto(true)}
         onOpenHistorico={() => setAbaAtiva('historico')}
+        novosCortes={novosCortes}
       />
       <ModalPlanos isOpen={modalPlanosAberto} onClose={() => setModalPlanosAberto(false)} onRefresh={carregarDados} empresaId={empresaId} />
       <ModalFiliais isOpen={modalFiliaisAberto} onClose={() => setModalFiliaisAberto(false)} empresaId={empresaId} />
@@ -739,9 +747,9 @@ export default function AdminDashboard() {
             onClick={() => setAbaAtiva(agendamentoAtivo ? 'agenda' : 'historico')}
             className={`relative flex h-[58px] flex-col items-center justify-center rounded-[20px] text-[11px] font-black transition-colors ${abaAtiva === (agendamentoAtivo ? 'agenda' : 'historico') ? 'bg-[#2a2418] text-[#E1BF63]' : 'text-zinc-500'}`}
           >
-            {agendamentoAtivo && novosAgendamentos > 0 && (
+            {novosItensPrimeiraAba > 0 && (
               <span className="absolute right-7 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#CEAA6B] px-1 text-[10px] font-black text-black shadow-[0_0_0_2px_#070707]">
-                {novosAgendamentos > 9 ? '9+' : novosAgendamentos}
+                {novosItensPrimeiraAba > 9 ? '9+' : novosItensPrimeiraAba}
               </span>
             )}
             {agendamentoAtivo ? (
@@ -767,8 +775,13 @@ export default function AdminDashboard() {
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
-            className={`flex h-[58px] flex-col items-center justify-center rounded-[20px] text-[11px] font-black transition-colors ${drawerOpen ? 'bg-[#2a2418] text-[#E1BF63]' : 'text-zinc-500 active:bg-[#141414]'}`}
+            className={`relative flex h-[58px] flex-col items-center justify-center rounded-[20px] text-[11px] font-black transition-colors ${drawerOpen ? 'bg-[#2a2418] text-[#E1BF63]' : 'text-zinc-500 active:bg-[#141414]'}`}
           >
+            {agendamentoAtivo && novosCortes > 0 && (
+              <span className="absolute right-7 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#CEAA6B] px-1 text-[10px] font-black text-black shadow-[0_0_0_2px_#070707]">
+                {novosCortes > 9 ? '9+' : novosCortes}
+              </span>
+            )}
             <svg className="mb-1" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
             Menu
           </button>
@@ -781,7 +794,12 @@ export default function AdminDashboard() {
             onClick={() => setMostrarAguardando(!mostrarAguardando)}
             className="w-full flex items-center justify-between text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-4 outline-none active:scale-[0.98] transition-transform"
           >
-            <span>Aguardando Ativação ({aguardandoAtivacao.length})</span>
+            <span className="flex items-center gap-2">
+              <span>Aguardando Ativação</span>
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-[#CEAA6B] px-2 text-[11px] font-black text-black shadow-[0_0_18px_rgba(206,170,107,0.35)]">
+                {aguardandoAtivacao.length > 99 ? '99+' : aguardandoAtivacao.length}
+              </span>
+            </span>
             <svg className={`transition-transform duration-300 ${mostrarAguardando ? 'rotate-180' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
           

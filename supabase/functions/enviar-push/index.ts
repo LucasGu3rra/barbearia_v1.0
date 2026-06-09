@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const vapidSubject = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@barber-system.local";
+  const vapidSubject = Deno.env.get("VAPID_SUBJECT") || "mailto:suporte.barbeariaclick@gmail.com";
   const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
   const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
 

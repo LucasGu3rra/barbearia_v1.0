@@ -15,6 +15,7 @@ export default function DrawerAdmin({
   onOpenServicos,
   onOpenConfiguracoes,
   onOpenHistorico,
+  novosCortes = 0,
 }) {
   const [modalFinanceiro, setModalFinanceiro] = useState(false);
   const [configAberto, setConfigAberto] = useState(false);
@@ -173,8 +174,13 @@ export default function DrawerAdmin({
 
           <button
             onClick={() => { if(onOpenHistorico) onOpenHistorico(); onClose(); }}
-            className="flex w-full items-center gap-3 rounded-[10px] border border-[#27272a] bg-[#121212] p-3 text-white transition-all active:scale-[0.99]"
+            className="relative flex w-full items-center gap-3 rounded-[10px] border border-[#27272a] bg-[#121212] p-3 text-white transition-all active:scale-[0.99]"
           >
+            {novosCortes > 0 && (
+              <span className="absolute right-3 top-3 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#CEAA6B] px-1 text-[10px] font-black text-black shadow-[0_0_0_2px_#121212]">
+                {novosCortes > 9 ? '9+' : novosCortes}
+              </span>
+            )}
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#2c281b] text-[#d5b451]">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
             </div>
