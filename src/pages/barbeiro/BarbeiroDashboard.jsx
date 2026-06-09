@@ -167,7 +167,7 @@ function AgendamentoDetalhesModal({ agendamento, onClose }) {
   );
 }
 
-function BarbeiroPerfilModal({ isOpen, onClose, barbeiro, user }) {
+function BarbeiroPerfilModal({ isOpen, onClose, barbeiro, user, redirectRecuperacao }) {
   const [senhaAtual, setSenhaAtual] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
@@ -243,7 +243,10 @@ function BarbeiroPerfilModal({ isOpen, onClose, barbeiro, user }) {
       return;
     }
 
-    const { error } = await supabase.auth.resetPasswordForEmail(emailLogin);
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      emailLogin,
+      redirectRecuperacao ? { redirectTo: redirectRecuperacao } : undefined
+    );
     if (error) {
       setErro('Nao foi possivel enviar a recuperacao.');
       return;
@@ -886,6 +889,7 @@ export default function BarbeiroDashboard() {
         onClose={() => setPerfilAberto(false)}
         barbeiro={barbeiro}
         user={user}
+        redirectRecuperacao={`${window.location.origin}${montarRotaEmpresa(empresaSlug, '/redefinir-senha')}`}
       />
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes barbeiroAgendaIn {
