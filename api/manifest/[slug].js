@@ -34,14 +34,39 @@ const BASE_MANIFEST = {
   ],
 };
 
+const SEGMENTOS_RESERVADOS = new Set([
+  'admin',
+  'api',
+  'assets',
+  'auth',
+  'barbeiro',
+  'favicon.ico',
+  'login',
+  'manifest.webmanifest',
+  'master',
+  'site.webmanifest',
+]);
+
 const normalizarSlug = (valor) => {
   const slugBruto = Array.isArray(valor) ? valor[0] : valor;
   const slug = String(slugBruto || '').replace(/\.webmanifest$/i, '').trim().toLowerCase();
+  if (SEGMENTOS_RESERVADOS.has(slug)) return '';
   return /^[a-z0-9-]+$/.test(slug) ? slug : '';
 };
 
+const obterSlugDoReferer = (referer = '') => {
+  try {
+    const url = new URL(referer);
+    const [segmento] = url.pathname.split('/').filter(Boolean);
+    return normalizarSlug(segmento);
+  } catch {
+    return '';
+  }
+};
+
 export default function handler(req, res) {
-  const slug = normalizarSlug(req.query.slug);
+  const slugParam = normalizarSlug(req.query.slug);
+  const slug = slugParam === 'current' ? obterSlugDoReferer(req.headers.referer) : slugParam;
   const rotaInicial = slug ? `/${slug}` : '/';
 
   res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
