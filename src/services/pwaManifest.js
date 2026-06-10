@@ -1,4 +1,4 @@
-const MANIFEST_PADRAO = '/site.webmanifest?v=5';
+const MANIFEST_PADRAO = '/site.webmanifest?v=6';
 const SEGMENTOS_RESERVADOS = new Set([
   'admin',
   'api',
@@ -27,7 +27,7 @@ const obterSlugDaRota = (pathname = '/') => {
 export const obterHrefManifestPwa = (pathname = '/') => {
   const slug = obterSlugDaRota(pathname);
   if (!slug) return MANIFEST_PADRAO;
-  return `/${encodeURIComponent(slug)}/site.webmanifest?v=5`;
+  return `/${encodeURIComponent(slug)}/site.webmanifest?v=6`;
 };
 
 export const atualizarManifestPwa = (pathname = window.location.pathname) => {

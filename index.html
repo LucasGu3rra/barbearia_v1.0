@@ -16,25 +16,7 @@
     <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
-    <link rel="manifest" href="/site.webmanifest?v=5" />
-    <script>
-      (function () {
-        var segmento = window.location.pathname.split('/').filter(Boolean)[0] || '';
-        var slug = /^[a-z0-9-]+$/.test(segmento) ? segmento.toLowerCase() : '';
-        var reservados = {
-          admin: true,
-          api: true,
-          assets: true,
-          auth: true,
-          barbeiro: true,
-          login: true,
-          master: true,
-        };
-        if (!slug || reservados[slug]) return;
-        var manifest = document.querySelector('link[rel="manifest"]');
-        if (manifest) manifest.setAttribute('href', '/' + encodeURIComponent(slug) + '/site.webmanifest?v=5');
-      })();
-    </script>
+    <link rel="manifest" href="site.webmanifest?v=6" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="BarbeariaClick" />
