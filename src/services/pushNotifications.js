@@ -57,7 +57,26 @@ export const registerPushSubscription = async ({
   if (!registration) return { ok: false, reason: 'service-worker-timeout' };
 
   const existingSubscription = await registration.pushManager.getSubscription();
-  const subscription = existingSubscription || await registration.pushManager.subscribe({
+  let subscription = existingSubscription;
+
+  if (existingSubscription?.endpoint) {
+    const { data: assinaturaAtual, error: consultaError } = await supabase
+      .from('push_subscriptions')
+      .select('id')
+      .eq('empresa_id', empresaId)
+      .eq('user_id', userId)
+      .eq('endpoint', existingSubscription.endpoint)
+      .maybeSingle();
+
+    if (consultaError) throw consultaError;
+
+    if (!assinaturaAtual) {
+      await existingSubscription.unsubscribe().catch(() => false);
+      subscription = null;
+    }
+  }
+
+  subscription = subscription || await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(pushConfig.publicKey),
   });
@@ -79,7 +98,7 @@ export const registerPushSubscription = async ({
       enabled: true,
       last_seen_at: now,
       updated_at: now,
-    }, { onConflict: 'empresa_id,user_id,endpoint' });
+    }, { onConflict: 'empresa_id,endpoint' });
 
   if (error) throw error;
   return { ok: true, permission };
@@ -88,9 +107,7 @@ export const registerPushSubscription = async ({
 export const disableCurrentPushSubscription = async ({
   supabase,
   empresaId,
-  userId,
 }) => {
-  if (!empresaId || !userId) return { ok: false, reason: 'missing-context' };
   if (!isPushSupported()) return { ok: false, reason: 'unsupported' };
 
   const registration = await waitForServiceWorker();
@@ -99,19 +116,22 @@ export const disableCurrentPushSubscription = async ({
   const subscription = await registration.pushManager.getSubscription();
   if (!subscription?.endpoint) return { ok: true, reason: 'no-subscription' };
 
-  const now = new Date().toISOString();
-  const { error } = await supabase
-    .from('push_subscriptions')
-    .update({
-      enabled: false,
-      updated_at: now,
-    })
-    .eq('empresa_id', empresaId)
-    .eq('user_id', userId)
-    .eq('endpoint', subscription.endpoint);
+  let dbError = null;
+  if (empresaId) {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('push_subscriptions')
+      .update({
+        enabled: false,
+        updated_at: now,
+      })
+      .eq('empresa_id', empresaId)
+      .eq('endpoint', subscription.endpoint);
 
-  if (error) throw error;
+    dbError = error;
+  }
 
   await subscription.unsubscribe().catch(() => false);
+  if (dbError) return { ok: false, reason: 'db-error', error: dbError };
   return { ok: true };
 };

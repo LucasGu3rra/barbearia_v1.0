@@ -4,6 +4,7 @@ import { PwaInstallContext } from './PwaInstallContextObject';
 import { atualizarManifestPwa } from '../services/pwaManifest';
 
 const INSTALL_PROMPT_DISMISSED_KEY = 'barberPwaInstallPromptDismissed';
+const INSTALL_PROMPT_AUTO_SEEN_PREFIX = 'barberPwaInstallPromptAutoSeen';
 
 const isStandaloneMode = () => {
   if (typeof window === 'undefined') return false;
@@ -41,6 +42,7 @@ export const PwaInstallProvider = ({ children }) => {
   const platformInfo = useMemo(() => detectarPlataformaPwa(), []);
   const installPromptAllowed = podeMostrarPromptNaRota(location.pathname);
   const installMode = platformInfo.isIos ? 'ios' : 'native';
+  const autoPromptSeenKey = `${INSTALL_PROMPT_AUTO_SEEN_PREFIX}:${installMode}`;
 
   useEffect(() => {
     atualizarManifestPwa(location.pathname);
@@ -81,25 +83,30 @@ export const PwaInstallProvider = ({ children }) => {
       return undefined;
     }
 
-    const promptDismissed = window.localStorage.getItem(INSTALL_PROMPT_DISMISSED_KEY);
-    if (promptDismissed) {
+    const promptAlreadySeen = window.localStorage.getItem(autoPromptSeenKey);
+    if (promptAlreadySeen) {
       return undefined;
     }
 
-    const promptTimer = window.setTimeout(() => setShowInstallPrompt(true), 900);
+    const promptTimer = window.setTimeout(() => {
+      window.localStorage.setItem(autoPromptSeenKey, 'seen');
+      setShowInstallPrompt(true);
+    }, 900);
     return () => window.clearTimeout(promptTimer);
-  }, [deferredPrompt, installPromptAllowed, isInstalled, platformInfo.isIos]);
+  }, [autoPromptSeenKey, deferredPrompt, installPromptAllowed, isInstalled, platformInfo.isIos]);
 
   const canInstall = !isInstalled && (Boolean(deferredPrompt) || platformInfo.isIos);
 
   const dismissInstallPrompt = useCallback(() => {
     window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, 'dismissed');
+    window.localStorage.setItem(autoPromptSeenKey, 'seen');
     setShowInstallPrompt(false);
-  }, []);
+  }, [autoPromptSeenKey]);
 
   const installApp = useCallback(async () => {
     if (platformInfo.isIos) {
       window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, 'prompted');
+      window.localStorage.setItem(autoPromptSeenKey, 'seen');
       setShowInstallPrompt(false);
       setShowIosInstallGuide(true);
       return false;
@@ -108,6 +115,7 @@ export const PwaInstallProvider = ({ children }) => {
     if (!deferredPrompt) return false;
 
     window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, 'prompted');
+    window.localStorage.setItem(autoPromptSeenKey, 'seen');
     setShowInstallPrompt(false);
     deferredPrompt.prompt();
 
@@ -121,7 +129,7 @@ export const PwaInstallProvider = ({ children }) => {
     }
 
     return false;
-  }, [deferredPrompt, platformInfo.isIos]);
+  }, [autoPromptSeenKey, deferredPrompt, platformInfo.isIos]);
 
   const value = useMemo(() => ({
     canInstall,
