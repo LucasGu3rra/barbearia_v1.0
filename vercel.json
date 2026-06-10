@@ -1,15 +1,12 @@
 {
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/manifest/([^/]+)\\.webmanifest",
-      "dest": "/api/manifest?slug=$1"
+      "source": "/:slug/site.webmanifest",
+      "destination": "/site.webmanifest"
     },
     {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/.*",
-      "dest": "/index.html"
+      "source": "/:path*",
+      "destination": "/index.html"
     }
   ]
 }

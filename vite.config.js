@@ -71,6 +71,25 @@ const manifestDinamicoPorSlug = () => ({
   configureServer(server) {
     server.middlewares.use((req, res, next) => {
       const url = new URL(String(req.url || '/'), 'http://localhost');
+      const matchManifestEstatico = url.pathname.match(/^\/([^/]+)\/site\.webmanifest$/);
+      if (matchManifestEstatico) {
+        const slug = normalizarSlugManifest(decodeURIComponent(matchManifestEstatico[1]));
+        if (!slug) {
+          next();
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store, max-age=0');
+        res.end(JSON.stringify({
+          ...BASE_MANIFEST,
+          id: '.',
+          start_url: '.',
+        }));
+        return;
+      }
+
       const match = url.pathname.match(/^\/api\/manifest\/([^/]+)$/);
       const slugDaRota = match ? decodeURIComponent(match[1]) : '';
       const slugDaQuery = url.pathname === '/api/manifest' ? url.searchParams.get('slug') : '';
