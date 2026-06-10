@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'barber-system-pwa-v2';
+const CACHE_VERSION = 'barber-system-pwa-v3';
 const APP_SHELL = [
   '/',
   '/offline.html',
@@ -38,7 +38,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (request.destination === 'manifest' || url.pathname.startsWith('/api/manifest/')) {
+  if (
+    request.destination === 'manifest'
+    || url.pathname.endsWith('.webmanifest')
+    || url.pathname.startsWith('/api/manifest/')
+  ) {
     event.respondWith(fetch(request, { cache: 'no-store' }));
     return;
   }
