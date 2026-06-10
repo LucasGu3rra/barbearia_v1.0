@@ -41,7 +41,6 @@ self.addEventListener('fetch', (event) => {
   if (
     request.destination === 'manifest'
     || url.pathname.endsWith('.webmanifest')
-    || url.pathname.startsWith('/api/manifest/')
   ) {
     event.respondWith(fetch(request, { cache: 'no-store' }));
     return;

@@ -90,28 +90,7 @@ const manifestDinamicoPorSlug = () => ({
         return;
       }
 
-      const match = url.pathname.match(/^\/api\/manifest\/([^/]+)$/);
-      const slugDaRota = match ? decodeURIComponent(match[1]) : '';
-      const slugDaQuery = url.pathname === '/api/manifest' ? url.searchParams.get('slug') : '';
-      const slugBruto = slugDaRota || slugDaQuery;
-
-      if (!slugBruto) {
-        next();
-        return;
-      }
-
-      const slugParam = normalizarSlugManifest(slugBruto);
-      const slug = slugParam === 'current' ? obterSlugDoReferer(req.headers.referer) : slugParam;
-      const rotaInicial = slug ? `/${slug}` : '/';
-
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store, max-age=0');
-      res.end(JSON.stringify({
-        ...BASE_MANIFEST,
-        id: rotaInicial,
-        start_url: rotaInicial,
-      }));
+      next();
     });
   },
 });
