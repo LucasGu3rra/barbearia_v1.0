@@ -1,8 +1,7 @@
-const CACHE_VERSION = 'barber-system-pwa-v1';
+const CACHE_VERSION = 'barber-system-pwa-v2';
 const APP_SHELL = [
   '/',
   '/offline.html',
-  '/manifest.webmanifest',
   '/pwa-icon-192.png',
   '/pwa-icon-512.png',
   '/apple-touch-icon.png'
@@ -38,6 +37,11 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (request.destination === 'manifest' || url.pathname.startsWith('/api/manifest/')) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
+    return;
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(
