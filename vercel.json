@@ -1,18 +1,11 @@
 {
-  "redirects": [
-    {
-      "source": "/:slug((?!admin$|api$|assets$|auth$|barbeiro$|login$|master$)[^/.]+)",
-      "destination": "/:slug/",
-      "permanent": false
-    }
-  ],
   "rewrites": [
     {
       "source": "/:slug/site.webmanifest",
       "destination": "/site.webmanifest"
     },
     {
-      "source": "/:path*",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
