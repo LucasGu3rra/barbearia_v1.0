@@ -70,13 +70,18 @@ const manifestDinamicoPorSlug = () => ({
   name: 'manifest-dinamico-por-slug',
   configureServer(server) {
     server.middlewares.use((req, res, next) => {
-      const match = String(req.url || '').match(/^\/api\/manifest\/([^/?]+)(?:\?.*)?$/);
-      if (!match) {
+      const url = new URL(String(req.url || '/'), 'http://localhost');
+      const match = url.pathname.match(/^\/api\/manifest\/([^/]+)$/);
+      const slugDaRota = match ? decodeURIComponent(match[1]) : '';
+      const slugDaQuery = url.pathname === '/api/manifest' ? url.searchParams.get('slug') : '';
+      const slugBruto = slugDaRota || slugDaQuery;
+
+      if (!slugBruto) {
         next();
         return;
       }
 
-      const slugParam = normalizarSlugManifest(decodeURIComponent(match[1]));
+      const slugParam = normalizarSlugManifest(slugBruto);
       const slug = slugParam === 'current' ? obterSlugDoReferer(req.headers.referer) : slugParam;
       const rotaInicial = slug ? `/${slug}` : '/';
 
