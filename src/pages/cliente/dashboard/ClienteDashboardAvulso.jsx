@@ -28,7 +28,7 @@ const detalheAgendamento = (agendamento) => {
   if (!agendamento) return 'O cliente pode ter apenas um agendamento ativo por vez.';
 
   return [
-    agendamento.servicos?.nome || 'Servico',
+    agendamento.planos?.nome || agendamento.servicos?.nome || 'Servico',
     agendamento.barbeiros?.nome,
     agendamento.filiais?.nome,
   ].filter(Boolean).join(' - ');

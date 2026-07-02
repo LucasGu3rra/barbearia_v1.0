@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, forwardRef, useCallback } from 'react';
+import { useState, useEffect, forwardRef, useCallback, useRef } from 'react';
 import ModalFiliais from '../components/ModalFiliais';
 import ModalBarbeiros from '../components/ModalBarbeiros';
 import ModalServicos from '../components/ModalServicos';
@@ -99,6 +99,7 @@ export default function AdminDashboard() {
   const [novosCortes, setNovosCortes] = useState(0);
 
   const navigate = useNavigate();
+  const realtimeRefreshTimerRef = useRef(null);
  
   const fecharModal = () => setModalConfig({ ...modalConfig, isOpen: false });
   const showConfirm = (title, message, acao) => setModalConfig({ isOpen: true, type: 'confirm', title, message, onConfirm: acao });
@@ -170,12 +171,16 @@ export default function AdminDashboard() {
     if (isManualRefresh) setRefreshing(true);
     
     try {
-      const { data: dadosPlanos, error: errPlanos } = await supabase
-        .from('planos')
-        .select('*')
-        .eq('empresa_id', empresaId);
-      
-      if (errPlanos) throw errPlanos;
+      const { data: bootstrap, error: bootstrapError } = await supabase
+        .rpc('admin_dashboard_bootstrap', { p_empresa_id: empresaId });
+
+      if (bootstrapError) throw bootstrapError;
+
+      const dadosPlanos = bootstrap?.planos || [];
+      const config = bootstrap?.configuracao || null;
+      const dadosClientes = bootstrap?.clientes || [];
+      const dadosCortes = bootstrap?.cortes || [];
+      const dadosAgendamentos = bootstrap?.agendamentos || [];
 
       const mapaPlanos = {};
       dadosPlanos?.forEach(p => {
@@ -188,52 +193,9 @@ export default function AdminDashboard() {
       });
       setPlanosInfo(mapaPlanos);
 
-      const { data: config } = await supabase
-        .from('configuracoes')
-        .select('valor')
-        .eq('empresa_id', empresaId)
-        .eq('chave', 'fluxo_agendamento')
-        .maybeSingle();
-
       if (config?.valor) {
         setAgendamentoAtivo(config.valor.agendamento_ativo ?? false);
       }
-
-      const { data: dadosClientes, error: errClientes } = await supabase
-        .from('clientes')
-        .select(`
-          id, nome, whatsapp,
-          assinaturas ( id, plano_escolhido, status, data_vencimento, created_at )
-        `)
-        .eq('empresa_id', empresaId)
-        .eq('eh_admin', false) 
-        .order('nome');
-
-      if (errClientes) throw errClientes;
-
-      const { data: dadosCortes, error: errCortes } = await supabase
-        .from('historico_cortes')
-        .select(`
-          id, created_at, tipo_corte, cliente_id, status, origem, cancelavel_ate,
-          clientes ( nome, whatsapp )
-        `)
-        .eq('empresa_id', empresaId)
-        .order('created_at', { ascending: false });
-
-      if (errCortes) throw errCortes;
-
-      const { data: dadosAgendamentos, error: errAgendamentos } = await supabase
-        .from('agendamentos')
-        .select(`
-          id, data_hora, status, tipo_cliente, created_at, cliente_id,
-          clientes ( nome, whatsapp ),
-          servicos ( nome, preco, duracao_minutos ),
-          barbeiros ( nome )
-        `)
-        .eq('empresa_id', empresaId)
-        .order('data_hora', { ascending: true });
-
-      if (errAgendamentos) throw errAgendamentos;
 
       setClientes(dadosClientes || []);
       setCortesGerais(dadosCortes || []);
@@ -248,6 +210,17 @@ export default function AdminDashboard() {
       }
     }
   }, [empresaId]);
+
+  const agendarCarregarDados = useCallback(() => {
+    if (realtimeRefreshTimerRef.current) {
+      clearTimeout(realtimeRefreshTimerRef.current);
+    }
+
+    realtimeRefreshTimerRef.current = setTimeout(() => {
+      carregarDados();
+      realtimeRefreshTimerRef.current = null;
+    }, 450);
+  }, [carregarDados]);
 
   useEffect(() => { 
     if (authLoading) return;
@@ -269,25 +242,29 @@ export default function AdminDashboard() {
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clientes', filter: filtroEmpresa }, (payload) => {
         if (payload.eventType === 'INSERT') setNovosClientes((total) => total + 1);
-        carregarDados();
+        agendarCarregarDados();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'assinaturas', filter: filtroEmpresa }, () => carregarDados())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'assinaturas', filter: filtroEmpresa }, () => agendarCarregarDados())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agendamentos', filter: filtroEmpresa }, (payload) => {
         if (payload.eventType === 'INSERT') setNovosAgendamentos((total) => total + 1);
-        carregarDados();
+        agendarCarregarDados();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_cortes', filter: filtroEmpresa }, (payload) => {
         if (payload.eventType === 'INSERT') setNovosCortes((total) => total + 1);
-        carregarDados();
+        agendarCarregarDados();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'configuracoes', filter: filtroEmpresa }, () => carregarDados())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'configuracoes', filter: filtroEmpresa }, () => agendarCarregarDados())
       .subscribe();
 
     return () => {
       isMounted = false;
+      if (realtimeRefreshTimerRef.current) {
+        clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
+      }
       supabase.removeChannel(channel);
     };
-  }, [navigate, authLoading, isAdmin, empresaId, empresaSlug, empresaAtual?.slug, carregarDados]);
+  }, [navigate, authLoading, isAdmin, empresaId, empresaSlug, empresaAtual?.slug, carregarDados, agendarCarregarDados]);
 
   useEffect(() => {
     if (!agendamentoAtivo && abaAtiva === 'agenda') {
@@ -315,20 +292,16 @@ export default function AdminDashboard() {
   };
 
   const confirmarAtivacao = (assinaturaId, nomeCliente) => {
-    showConfirm('Ativar Assinatura', `Confirmar recebimento e ativar o plano de ${nomeCliente} por 30 dias?`, () => efetuarAtivacao(assinaturaId));
+    showConfirm('Confirmar pagamento', `Confirmar recebimento e ativar ou renovar o plano de ${nomeCliente} por 30 dias?`, () => efetuarAtivacao(assinaturaId));
   };
 
   const efetuarAtivacao = async (assinaturaId) => {
     fecharModal();
     try {
-      const dataVencimento = new Date();
-      dataVencimento.setDate(dataVencimento.getDate() + 30);
       const assinaturaAtivada = aguardandoAtivacao.find((item) => item.assinatura.id === assinaturaId);
-      const { error } = await supabase
-        .from('assinaturas')
-        .update({ status: 'ativa', data_vencimento: dataVencimento.toISOString() })
-        .eq('id', assinaturaId)
-        .eq('empresa_id', empresaId);
+      const { error } = await supabase.rpc('confirmar_pagamento_plano', {
+        p_assinatura_id: assinaturaId,
+      });
       if (error) throw error;
       if (assinaturaAtivada?.id) {
         enviarPushParaUsuarios({
@@ -341,9 +314,9 @@ export default function AdminDashboard() {
         });
       }
       carregarDados(); 
-      showAlert('Sucesso', 'A assinatura foi ativada e o acesso do cliente está liberado.');
+      showAlert('Sucesso', 'Pagamento confirmado. O plano foi ativado e o ciclo de 30 dias foi iniciado.');
     } catch (error) {
-      showAlert('Erro', 'Não foi possível ativar a assinatura: ' + error.message);
+      showAlert('Erro', 'Não foi possível confirmar o pagamento: ' + error.message);
     }
   };
 
@@ -443,10 +416,24 @@ export default function AdminDashboard() {
 
     const planoDetalhe = assinatura ? planosInfo[assinatura.plano_escolhido] : null;
 
-    const cortesHistoricoMes = cortesGerais.filter(corte => {
+    const inicioCiclo = assinatura?.status === 'ativa' && assinatura.data_vencimento
+      ? new Date(
+        assinatura.ativada_em
+        || new Date(new Date(assinatura.data_vencimento).getTime() - 30 * 24 * 60 * 60 * 1000)
+      )
+      : null;
+    const fimCiclo = assinatura?.status === 'ativa' && assinatura.data_vencimento
+      ? new Date(assinatura.data_vencimento)
+      : null;
+    const dentroDoCiclo = (valor) => {
+      if (!inicioCiclo || !fimCiclo) return false;
+      const data = new Date(valor);
+      return data >= inicioCiclo && data <= fimCiclo;
+    };
+
+    const cortesHistoricoCiclo = cortesGerais.filter(corte => {
       const ehDesteCliente = corte.cliente_id === cliente.id && String(corte.status || 'feito').toLowerCase() !== 'cancelado';
-      const dataCorte = new Date(corte.created_at);
-      return ehDesteCliente && dataCorte.getMonth() === mesAtual && dataCorte.getFullYear() === anoAtual;
+      return ehDesteCliente && dentroDoCiclo(corte.created_at);
     });
 
     const agendamentosValidosCliente = agenda.filter(agendamento => {
@@ -458,8 +445,9 @@ export default function AdminDashboard() {
       const dataAgendamento = new Date(agendamento.data_hora || agendamento.created_at);
       return dataAgendamento.getMonth() === mesAtual && dataAgendamento.getFullYear() === anoAtual;
     });
-    const agendamentosPlanoMes = agendamentosValidosMes.filter(agendamento => {
-      return String(agendamento.tipo_cliente || '').toLowerCase() === 'assinante';
+    const agendamentosPlanoCiclo = agendamentosValidosCliente.filter(agendamento => {
+      return String(agendamento.tipo_cliente || '').toLowerCase() === 'assinante'
+        && dentroDoCiclo(agendamento.data_hora || agendamento.created_at);
     });
 
     const ultimoServicoHistorico = cortesGerais.find(corte => {
@@ -478,14 +466,21 @@ export default function AdminDashboard() {
       return dataAgendamento > dataHistorico ? ultimoServicoAgendamento : ultimoServicoHistorico;
     })();
 
-    const usosPlanoMes = cortesHistoricoMes.length + agendamentosPlanoMes.length;
-    const servicosNoMes = cortesHistoricoMes.length + agendamentosValidosMes.length;
+    const usosPlanoCiclo = cortesHistoricoCiclo.length + agendamentosPlanoCiclo.length;
+    const cortesAvulsosMes = cortesGerais.filter(corte => {
+      const dataCorte = new Date(corte.created_at);
+      return corte.cliente_id === cliente.id
+        && String(corte.status || 'feito').toLowerCase() !== 'cancelado'
+        && dataCorte.getMonth() === mesAtual
+        && dataCorte.getFullYear() === anoAtual;
+    });
+    const servicosNoMes = cortesAvulsosMes.length + agendamentosValidosMes.length;
 
     return {
       ...cliente,
       assinatura,
       planoDetalhe,
-      cortesNoMes: usosPlanoMes,
+      usosPlanoCiclo,
       servicosNoMes,
       ultimoServico,
       classificacao,
@@ -610,7 +605,7 @@ export default function AdminDashboard() {
   const detalhePrincipalCliente = (cliente) => {
     if (cliente.classificacao === 'avulso') {
       return cliente.ultimoServico
-        ? `Ultimo servico: ${cliente.ultimoServico.tipo_corte || cliente.ultimoServico.servicos?.nome || 'Servico'}`
+        ? `Ultimo servico: ${cliente.ultimoServico.tipo_corte || cliente.ultimoServico.planos?.nome || cliente.ultimoServico.servicos?.nome || 'Servico'}`
         : 'Sem servicos registrados';
     }
 
@@ -627,7 +622,7 @@ export default function AdminDashboard() {
     }
 
     return cliente.planoDetalhe
-      ? `${cliente.planoDetalhe.ilimitado ? 'Ilimitado' : `${cliente.planoDetalhe.limite} Cortes/mês`} • ${cliente.planoDetalhe.preco}`
+      ? `${cliente.planoDetalhe.ilimitado ? 'Ilimitado' : `${cliente.planoDetalhe.limite} cortes/ciclo`} • ${cliente.planoDetalhe.preco}`
       : 'Plano ativo';
   };
 
@@ -645,10 +640,10 @@ export default function AdminDashboard() {
     }
 
     if (cliente.planoDetalhe?.ilimitado) {
-      return `${cliente.cortesNoMes} cortes no mes`;
+      return `${cliente.usosPlanoCiclo || 0} cortes no ciclo`;
     }
 
-    return `${cliente.cortesNoMes} de ${cliente.planoDetalhe?.limite || 0} cortes usados`;
+    return `${cliente.usosPlanoCiclo || 0} de ${cliente.planoDetalhe?.limite || 0} cortes usados`;
   };
 
   const detalheDataCliente = (cliente) => {
@@ -891,7 +886,7 @@ export default function AdminDashboard() {
                 listaAgendaVisivel.map(ag => {
                   const horaAgendamento = formatarHora(ag.data_hora);
                   const nomeCli = ag.clientes?.nome || 'Cliente Desconhecido';
-                  const nomeServico = ag.servicos?.nome || 'Serviço não informado';
+                  const nomeServico = ag.planos?.nome || ag.servicos?.nome || 'Serviço não informado';
                   const nomeBarbeiro = ag.barbeiros?.nome || 'Sem barbeiro';
                   const status = String(ag.status || 'agendado').toLowerCase();
 

@@ -56,16 +56,6 @@ const normalizarSlugManifest = (valor) => {
   return /^[a-z0-9-]+$/.test(slug) ? slug : '';
 };
 
-const obterSlugDoReferer = (referer = '') => {
-  try {
-    const url = new URL(referer);
-    const [segmento] = url.pathname.split('/').filter(Boolean);
-    return normalizarSlugManifest(segmento);
-  } catch {
-    return '';
-  }
-};
-
 const manifestDinamicoPorSlug = () => ({
   name: 'manifest-dinamico-por-slug',
   configureServer(server) {

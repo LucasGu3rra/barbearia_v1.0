@@ -160,7 +160,7 @@ export default function ClienteDashboard() {
       if (mensagem.includes('cliente_plano_corte_dia_conflito')) {
         exibirAlerta('Corte ja confirmado', 'Seu plano permite confirmar apenas um corte por dia.');
       } else if (mensagem.includes('limite_plano_atingido')) {
-        exibirAlerta('Limite atingido', 'Voce ja usou todos os cortes disponiveis do seu plano neste mes.');
+        exibirAlerta('Limite atingido', 'Voce ja usou todos os cortes disponiveis do seu plano neste ciclo.');
       } else if (mensagem.includes('plano_ativo_nao_encontrado')) {
         exibirAlerta('Plano indisponivel', 'Seu plano precisa estar ativo para confirmar o corte.');
       } else {
@@ -181,7 +181,7 @@ export default function ClienteDashboard() {
       : 'Sem data';
 
     return [
-      `Servico: ${agendamento.servicos?.nome || 'Servico'}`,
+      `Servico: ${agendamento.planos?.nome || agendamento.servicos?.nome || 'Servico'}`,
       `Horario: ${quando}`,
       agendamento.barbeiros?.nome ? `Barbeiro: ${agendamento.barbeiros.nome}` : null,
       agendamento.filiais?.nome ? `Local: ${agendamento.filiais.nome}` : null,
@@ -252,7 +252,7 @@ export default function ClienteDashboard() {
       })),
       ...agendamentos.map((agendamento) => ({
         tipo: 'agendamento',
-        nome: agendamento.servicos?.nome || 'Servico',
+        nome: agendamento.planos?.nome || agendamento.servicos?.nome || 'Servico',
         data: agendamento.data_hora || agendamento.created_at,
         status: agendamento.status || 'agendado',
       })),
@@ -278,10 +278,10 @@ export default function ClienteDashboard() {
       })),
       ...agendamentosValidosAvulso.map((agendamento) => ({
         id: agendamento.id,
-        nome: agendamento.servicos?.nome || 'Servico',
+        nome: agendamento.planos?.nome || agendamento.servicos?.nome || 'Servico',
         data: agendamento.data_hora || agendamento.created_at,
         status: String(agendamento.status || '').toLowerCase() === 'agendado' ? 'Agendado' : 'Finalizado',
-        preco: agendamento.servicos?.preco,
+        preco: agendamento.planos?.preco || agendamento.servicos?.preco,
       })),
     ];
 

@@ -28,12 +28,12 @@ export default function useClienteAgendamentoFlow({
       return;
     }
     if (tipoCliente === 'ativo') {
-      if (!dados?.servicoId) {
-        exibirAlerta('Plano sem servico', 'Este plano ainda nao tem um servico vinculado. Peca para o barbeiro configurar no painel de planos.');
+      if (!dados?.planoUuid) {
+        exibirAlerta('Plano indisponivel', 'Nao foi possivel identificar o plano ativo. Atualize a tela e tente novamente.');
         return;
       }
       setModoAgendamento('plano');
-      setServicoAgendamentoInicial(dados.servicoId);
+      setServicoAgendamentoInicial(null);
       setVoltarParaServicosAoVoltar(false);
       setModalAgendamentoAberto(true);
       return;
@@ -82,13 +82,13 @@ export default function useClienteAgendamentoFlow({
       return;
     }
 
-    if (!dados?.servicoId) {
-      exibirAlerta('Plano sem servico', 'Este plano ainda nao tem um servico vinculado. Peca para o barbeiro configurar no painel de planos.');
+    if (!dados?.planoUuid) {
+      exibirAlerta('Plano indisponivel', 'Nao foi possivel identificar o plano ativo. Atualize a tela e tente novamente.');
       return;
     }
 
     setModoAgendamento('plano');
-    setServicoAgendamentoInicial(dados.servicoId);
+    setServicoAgendamentoInicial(null);
     setVoltarParaServicosAoVoltar(false);
     setModalAgendamentoAberto(true);
   };

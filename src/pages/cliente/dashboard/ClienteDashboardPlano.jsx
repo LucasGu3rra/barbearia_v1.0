@@ -30,7 +30,7 @@ const formatarDataAgendamento = (valor) => {
 const detalheAgendamento = (agendamento) => {
   if (!agendamento) return null;
   return [
-    agendamento.servicos?.nome || 'Serviço',
+    agendamento.planos?.nome || agendamento.servicos?.nome || 'Serviço',
     agendamento.barbeiros?.nome,
     agendamento.filiais?.nome,
   ].filter(Boolean).join(' - ');
@@ -258,7 +258,7 @@ export default function ClienteDashboardPlano({
         </div>
 
         <div className="border-t border-[#252525] pt-4">
-          <SectionTitle>{planoAtivo ? 'Historico do mes' : 'Ultimo pedido'}</SectionTitle>
+          <SectionTitle>{planoAtivo ? 'Historico do ciclo' : 'Ultimo pedido'}</SectionTitle>
           <div className="space-y-2">
             {planoAtivo && historicoMes.length > 0 ? (
               historicoMes.slice(0, 3).map((corte) => (

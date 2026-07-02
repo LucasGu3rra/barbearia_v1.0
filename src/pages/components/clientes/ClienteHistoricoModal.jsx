@@ -49,7 +49,7 @@ export default function ClienteHistoricoModal({
               return (
                 <div key={agendamento.id || index} className="bg-[#1b1b1b] border border-[#333] rounded-[10px] p-3 flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-bold text-white">{agendamento.servicos?.nome || 'Servico'}</p>
+                    <p className="text-sm font-bold text-white">{agendamento.planos?.nome || agendamento.servicos?.nome || 'Servico'}</p>
                     <p className="text-[10px] text-zinc-500 mt-1">
                       {dataAgendamento
                         ? `${dataAgendamento.toLocaleDateString('pt-BR')} as ${dataAgendamento.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`

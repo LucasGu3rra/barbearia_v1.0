@@ -12,30 +12,32 @@ export default function TelaBloqueio() {
   const empresaId = empresaAtual?.id;
   const slugEmpresa = empresaAtual?.slug || empresaSlug;
   const whatsappEmpresa = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '5581988468182');
-  const [dados, setDados] = useState({ nome: '', iniciais: '', vencimento: '' });
+  const [dados, setDados] = useState({ nome: '', iniciais: '', vencimento: '', planoResumo: '' });
 
   const carregarDados = useCallback(async () => {
     const id = user?.id;
     if (!id) return;
 
-    // Busca o nome do cliente e a data de vencimento real da assinatura no Supabase
     const { data: cli } = await supabase
       .from('clientes')
-      .select('nome, assinaturas(data_vencimento)')
+      .select('nome, assinaturas(data_vencimento, created_at, plano_escolhido)')
       .eq('empresa_id', empresaId)
       .eq('id', id)
       .single();
 
-    const vencimentoRaw = cli?.assinaturas?.[0]?.data_vencimento;
+    const assinatura = [...(cli?.assinaturas || [])]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || null;
+    const vencimentoRaw = assinatura?.data_vencimento;
 
     setDados({
-      nome: cli?.nome || 'Felipe Nunes',
+      nome: cli?.nome || 'Cliente',
       iniciais: cli?.nome 
         ? cli.nome.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) 
-        : 'FN',
+        : 'CL',
       vencimento: vencimentoRaw 
         ? new Date(vencimentoRaw).toLocaleDateString('pt-BR') 
-        : '01/05/2026'
+        : '--/--',
+      planoResumo: assinatura?.plano_escolhido ? 'Plano vencido' : 'Sem plano ativo',
     });
   }, [empresaId, user?.id]);
 
@@ -88,7 +90,7 @@ export default function TelaBloqueio() {
           </div>
           <div>
             <p className="font-bold text-[15px] text-white tracking-wide">{dados.nome}</p>
-            <p className="text-[11px] text-[#881b1b] font-medium mt-[2px]">Plano 4 Cortes/mês</p>
+            <p className="text-[11px] text-[#881b1b] font-medium mt-[2px]">{dados.planoResumo}</p>
           </div>
         </div>
 

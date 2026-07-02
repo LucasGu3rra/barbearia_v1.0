@@ -179,6 +179,7 @@ Deno.serve(async (req) => {
       id, empresa_id, cliente_id, barbeiro_id, data_hora, tipo_cliente, duracao_minutos, status,
       clientes(nome),
       servicos(nome),
+      planos(nome),
       filiais(nome),
       barbeiros(nome, user_id),
       empresas(slug)
@@ -218,16 +219,23 @@ Deno.serve(async (req) => {
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 
   const nomeCliente = agendamento.clientes?.nome || "Cliente";
-  const nomeServico = agendamento.servicos?.nome || "Servico";
+  const nomeServico = agendamento.planos?.nome || agendamento.servicos?.nome || "Servico";
   const quando = formatarPartesDataHora(agendamento.data_hora);
   const empresaSlug = agendamento.empresas?.slug;
   const urlCliente = montarUrl(empresaSlug, "dashboard");
-  const urlPainel = montarUrl(empresaSlug, "dashboard");
+  const urlAdmin = montarUrl(empresaSlug, "admin/dashboard");
+  const urlBarbeiro = montarUrl(empresaSlug, "barbeiro/dashboard");
 
-  const usuariosEquipe = [
-    ...(admins || []).map((admin) => admin.user_id),
-    agendamento.barbeiros?.user_id,
-  ].filter((userId) => userId && userId !== agendamento.cliente_id);
+  const usuariosAdmin = [...new Set(
+    (admins || [])
+      .map((admin) => admin.user_id)
+      .filter((userId) => userId && userId !== agendamento.cliente_id),
+  )];
+  const usuariosBarbeiro = agendamento.barbeiros?.user_id
+    && agendamento.barbeiros.user_id !== agendamento.cliente_id
+    && !usuariosAdmin.includes(agendamento.barbeiros.user_id)
+    ? [agendamento.barbeiros.user_id]
+    : [];
 
   const eventoCancelamento = evento === "cancelado" || evento === "excluido";
   const resultados = [];
@@ -246,11 +254,21 @@ Deno.serve(async (req) => {
     resultados.push(await enviarPush({
       supabaseAdmin,
       empresaId: agendamento.empresa_id,
-      targetUserIds: usuariosEquipe,
+      targetUserIds: usuariosAdmin,
       titulo: "Novo agendamento!",
       corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
       tipo: "novo_agendamento",
-      dados: { url: urlPainel, agendamento_id: agendamento.id },
+      dados: { url: urlAdmin, agendamento_id: agendamento.id },
+    }));
+
+    resultados.push(await enviarPush({
+      supabaseAdmin,
+      empresaId: agendamento.empresa_id,
+      targetUserIds: usuariosBarbeiro,
+      titulo: "Novo agendamento!",
+      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
+      tipo: "novo_agendamento",
+      dados: { url: urlBarbeiro, agendamento_id: agendamento.id },
     }));
   }
 
@@ -268,11 +286,21 @@ Deno.serve(async (req) => {
     resultados.push(await enviarPush({
       supabaseAdmin,
       empresaId: agendamento.empresa_id,
-      targetUserIds: usuariosEquipe,
+      targetUserIds: usuariosAdmin,
       titulo: "Agendamento cancelado",
       corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
       tipo: "agendamento_cancelado",
-      dados: { url: urlPainel, agendamento_id: agendamento.id },
+      dados: { url: urlAdmin, agendamento_id: agendamento.id },
+    }));
+
+    resultados.push(await enviarPush({
+      supabaseAdmin,
+      empresaId: agendamento.empresa_id,
+      targetUserIds: usuariosBarbeiro,
+      titulo: "Agendamento cancelado",
+      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
+      tipo: "agendamento_cancelado",
+      dados: { url: urlBarbeiro, agendamento_id: agendamento.id },
     }));
   }
 

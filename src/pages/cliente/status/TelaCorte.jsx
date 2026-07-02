@@ -52,7 +52,7 @@ export default function TelaCorte() {
 
     const { data: cli } = await supabase
       .from('clientes')
-      .select('nome, assinaturas(status, data_vencimento, plano_escolhido)')
+      .select('nome, assinaturas(status, ativada_em, data_vencimento, plano_escolhido)')
       .eq('empresa_id', empresaId)
       .eq('id', id)
       .single();
@@ -75,8 +75,8 @@ export default function TelaCorte() {
       .limit(1)
       .maybeSingle();
 
-    const hoje = new Date();
-    const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString();
+    const inicioCiclo = assinatura?.ativada_em
+      || new Date(new Date(assinatura.data_vencimento).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     const { count } = await supabase
       .from('historico_cortes')
@@ -84,7 +84,8 @@ export default function TelaCorte() {
       .eq('empresa_id', empresaId)
       .eq('cliente_id', id)
       .neq('status', 'cancelado')
-      .gte('created_at', primeiroDiaMes);
+      .gte('created_at', inicioCiclo)
+      .lte('created_at', assinatura.data_vencimento);
 
     setDados({
       nome: cli?.nome || 'Cliente',

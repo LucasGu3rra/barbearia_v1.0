@@ -139,18 +139,26 @@ export default function ModalAgendamento({
     const servicoInicial = servicoInicialId
       ? listaServicos.find(servico => servico.id === servicoInicialId)
       : null;
+    const planoInicial = isAssinante && planoCliente?.planoUuid
+      ? {
+        id: planoCliente.planoUuid,
+        nome: planoCliente.planoNome || 'Plano',
+        preco: 0,
+        duracao_minutos: Number(planoCliente.duracaoMinutos || 30),
+      }
+      : null;
     setFiliais(listaFiliais);
     setBarbeiros(listaBarbeiros);
     setHorariosFuncionamento(horarios || []);
     setFilialSelecionada(listaFiliais[0] || null);
     setBarbeiroSelecionado(null);
-    const servicoPadrao = servicoInicial || null;
+    const servicoPadrao = planoInicial || servicoInicial || null;
     setServicoSelecionado(servicoPadrao);
     setServicoPreSelecionado(Boolean(servicoPadrao));
     setErro(servicoPadrao ? '' : 'Selecione um servico antes de agendar.');
     setStep(servicoPadrao ? 2 : 0);
     setCarregando(false);
-  }, [empresaId, servicoInicialId]);
+  }, [empresaId, isAssinante, planoCliente, servicoInicialId]);
 
   useEffect(() => {
     if (!isOpen || !empresaId) return;
@@ -364,7 +372,8 @@ export default function ModalAgendamento({
         cliente_id: clienteId,
         empresa_id: empresaId,
         filial_id: filialSelecionada.id,
-        servico_id: servicoSelecionado.id,
+        servico_id: isAssinante ? null : servicoSelecionado.id,
+        plano_id: isAssinante ? planoCliente?.planoUuid : null,
         barbeiro_id: barbeiroId,
         data_hora: dataHora.toISOString(),
         tipo_cliente: tipoCliente,
@@ -385,14 +394,14 @@ export default function ModalAgendamento({
       } else if (e.message === 'cliente_plano_agendamento_dia_conflito') {
         setErro('Seu plano permite apenas um agendamento por dia. Cancele dentro do prazo para reagendar.');
       } else if (e.message === 'limite_plano_atingido') {
-        setErro('Voce ja usou ou reservou todos os cortes disponiveis do seu plano neste mes.');
+        setErro('Voce ja usou ou reservou todos os cortes disponiveis neste ciclo do plano.');
       } else if (e.message === 'plano_ativo_nao_encontrado') {
         setErro('Seu plano venceu ou ainda nao esta ativo para este horario.');
       } else if (e.message === 'plano_indisponivel') {
         setErro('O plano vinculado nao esta disponivel. Fale com a barbearia.');
       } else if (e.message === 'agendamento_online_desativado') {
         setErro('A barbearia pausou novos agendamentos online agora.');
-      } else if (e.code === '23505' || ['cliente_agendamento_conflito', 'barbeiro_agendamento_conflito'].includes(e.message)) {
+      } else if (['23505', '23P01'].includes(e.code) || ['cliente_agendamento_conflito', 'barbeiro_agendamento_conflito'].includes(e.message)) {
         setErro('Esse horario acabou de ser ocupado. Escolha outro horario.');
       } else {
         setErro(e.message || 'Erro ao confirmar. Tente novamente.');
@@ -575,7 +584,7 @@ export default function ModalAgendamento({
                     <div className="crow"><span className="cl">Data</span><span className="cv">{dataSelecionada?.toLocaleDateString('pt-BR') || '-'}</span></div>
                     <div className="crow"><span className="cl">Horário</span><span className="cv">{horarioSelecionado || '-'}</span></div>
                     <div className="crow"><span className="cl">Barbeiro</span><span className="cv">{barbeiroSelecionado?.nome || 'Sem preferência'}</span></div>
-                    <div className="crow"><span className="cl">Valor</span><span className="cv" style={{ color: 'var(--client-gold)' }}>R$ {Number(servicoSelecionado?.preco || 0).toFixed(0)}</span></div>
+                    <div className="crow"><span className="cl">Valor</span><span className="cv" style={{ color: 'var(--client-gold)' }}>{isAssinante ? 'Incluido no plano' : `R$ ${Number(servicoSelecionado?.preco || 0).toFixed(0)}`}</span></div>
                   </div>
                   {erro && <p className="text-red-500 text-xs text-center mb-2">{erro}</p>}
                   <button className="btn primary" onClick={confirmarAgendamento} disabled={salvando}>

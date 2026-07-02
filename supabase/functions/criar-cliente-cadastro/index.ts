@@ -27,6 +27,40 @@ const jsonResponse = (body: unknown, status = 200) => (
 
 const limparTelefone = (valor: string) => valor.replace(/\D/g, "");
 
+const hashTexto = async (valor: string) => {
+  const bytes = new TextEncoder().encode(valor);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+const obterIpCliente = (req: Request) => {
+  const encaminhado = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return req.headers.get("cf-connecting-ip")
+    || req.headers.get("x-real-ip")
+    || encaminhado
+    || "ip-desconhecido";
+};
+
+const verificarRateLimit = async (
+  adminClient: ReturnType<typeof createClient>,
+  identificador: string,
+  limite: number,
+  janelaMinutos: number,
+  bloqueioMinutos: number,
+) => {
+  const { data, error } = await adminClient.rpc("registrar_tentativa_cadastro", {
+    p_identificador: identificador,
+    p_limite: limite,
+    p_janela_minutos: janelaMinutos,
+    p_bloqueio_minutos: bloqueioMinutos,
+  });
+
+  if (error) throw error;
+  return data as { allowed?: boolean; retry_after_seconds?: number } | null;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -59,6 +93,24 @@ Deno.serve(async (req) => {
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
+  try {
+    const ipHash = await hashTexto(`cadastro:ip:${obterIpCliente(req)}`);
+    const emailHash = await hashTexto(`cadastro:email:${empresaSlug}:${email}`);
+
+    const limiteIp = await verificarRateLimit(adminClient, ipHash, 20, 60, 30);
+    const limiteEmail = await verificarRateLimit(adminClient, emailHash, 5, 60, 60);
+
+    if (limiteIp?.allowed === false || limiteEmail?.allowed === false) {
+      return jsonResponse({
+        ok: false,
+        error: "Muitas tentativas de cadastro. Aguarde alguns minutos e tente novamente.",
+      }, 429);
+    }
+  } catch (error) {
+    console.error("Erro ao validar limite de cadastro:", error);
+    return jsonResponse({ ok: false, error: "Nao foi possivel validar o cadastro agora." }, 500);
+  }
+
   const { data: empresa, error: empresaError } = await adminClient
     .from("empresas")
     .select("id, slug")
@@ -79,28 +131,68 @@ Deno.serve(async (req) => {
   if (clienteExistente) return jsonResponse({ ok: false, error: "Este e-mail ja esta cadastrado." }, 409);
 
   let userId: string | null = null;
+  let usuarioCriadoAgora = false;
 
   try {
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-      email,
-      password: senha,
-      email_confirm: true,
-      user_metadata: {
-        nome,
-        papel: "cliente",
-        empresa_id: empresa.id,
-      },
-    });
+    const { data: authEmail, error: authEmailError } = await adminClient
+      .from("auth_user_emails")
+      .select("user_id")
+      .eq("email", email)
+      .maybeSingle();
 
-    if (authError || !authData.user) {
-      const mensagem = authError?.message || "Erro ao criar usuario.";
-      if (mensagem.toLowerCase().includes("already")) {
-        return jsonResponse({ ok: false, error: "Este e-mail ja esta cadastrado." }, 409);
-      }
-      return jsonResponse({ ok: false, error: mensagem }, 400);
+    if (authEmailError) {
+      return jsonResponse({ ok: false, error: "Erro ao validar usuario." }, 500);
     }
 
-    userId = authData.user.id;
+    if (authEmail?.user_id) {
+      const { data: vinculosExistentes, error: vinculosError } = await adminClient
+        .from("usuarios_empresas")
+        .select("empresa_id")
+        .eq("user_id", authEmail.user_id);
+
+      if (vinculosError) return jsonResponse({ ok: false, error: "Erro ao validar vinculos." }, 500);
+      if ((vinculosExistentes || []).length > 0) {
+        return jsonResponse({ ok: false, error: "Este e-mail ja esta cadastrado." }, 409);
+      }
+
+      const { error: atualizarAuthError } = await adminClient.auth.admin.updateUserById(authEmail.user_id, {
+        password: senha,
+        email_confirm: true,
+        user_metadata: {
+          nome,
+          papel: "cliente",
+          empresa_id: empresa.id,
+        },
+      });
+
+      if (atualizarAuthError) {
+        return jsonResponse({ ok: false, error: "Nao foi possivel recuperar este cadastro." }, 400);
+      }
+
+      userId = authEmail.user_id;
+    } else {
+      const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+        email,
+        password: senha,
+        email_confirm: true,
+        user_metadata: {
+          nome,
+          papel: "cliente",
+          empresa_id: empresa.id,
+        },
+      });
+
+      if (authError || !authData.user) {
+        const mensagem = authError?.message || "Erro ao criar usuario.";
+        if (mensagem.toLowerCase().includes("already")) {
+          return jsonResponse({ ok: false, error: "Este e-mail ja esta cadastrado." }, 409);
+        }
+        return jsonResponse({ ok: false, error: mensagem }, 400);
+      }
+
+      userId = authData.user.id;
+      usuarioCriadoAgora = true;
+    }
 
     const { error: clienteError } = await adminClient
       .from("clientes")
@@ -136,7 +228,9 @@ Deno.serve(async (req) => {
     if (userId) {
       await adminClient.from("usuarios_empresas").delete().eq("user_id", userId).eq("empresa_id", empresa.id);
       await adminClient.from("clientes").delete().eq("id", userId);
-      await adminClient.auth.admin.deleteUser(userId);
+      if (usuarioCriadoAgora) {
+        await adminClient.auth.admin.deleteUser(userId);
+      }
     }
 
     const mensagem = error instanceof Error ? error.message : "Erro ao finalizar cadastro.";

@@ -90,7 +90,7 @@ function AgendamentoDetalhesModal({ agendamento, onClose }) {
   if (!agendamento) return null;
 
   const whatsapp = formatarTelefoneWhatsapp(agendamento.clientes?.whatsapp);
-  const duracao = agendamento.duracao_minutos || agendamento.servicos?.duracao_minutos || 30;
+  const duracao = agendamento.duracao_minutos || agendamento.planos?.duracao_minutos || agendamento.servicos?.duracao_minutos || 30;
   const status = String(agendamento.status || 'agendado').toLowerCase();
 
   return (
@@ -121,7 +121,7 @@ function AgendamentoDetalhesModal({ agendamento, onClose }) {
         <div className="space-y-3">
           <div className="rounded-[20px] border bg-[#18181b] p-4" style={bordaCard}>
             <p className="text-[9px] font-black uppercase tracking-[0.18em] text-zinc-500">Servico</p>
-            <p className="mt-2 text-base font-black text-white">{agendamento.servicos?.nome || 'Servico'}</p>
+            <p className="mt-2 text-base font-black text-white">{agendamento.planos?.nome || agendamento.servicos?.nome || 'Servico'}</p>
             <p className="mt-1 text-xs text-zinc-500">
               {formatarDataCurta(agendamento.data_hora)} - {formatarHora(agendamento.data_hora)} - {duracao} min
             </p>
@@ -639,7 +639,7 @@ export default function BarbeiroDashboard() {
           .maybeSingle(),
         supabase
           .from('agendamentos')
-          .select('id, data_hora, status, tipo_cliente, duracao_minutos, clientes(nome, whatsapp), servicos(nome, preco, duracao_minutos), filiais(nome)')
+          .select('id, data_hora, status, tipo_cliente, duracao_minutos, clientes(nome, whatsapp), servicos(nome, preco, duracao_minutos), planos(nome, preco, duracao_minutos), filiais(nome)')
           .eq('empresa_id', empresaAtual.id)
           .gte('data_hora', inicio)
           .lte('data_hora', fim)
@@ -779,8 +779,8 @@ export default function BarbeiroDashboard() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-black leading-tight text-white">{nomeClienteCurto(proximoAgendamento.clientes?.nome)}</p>
                       <div className="mt-1 flex min-w-0 items-center gap-2">
-                        <p className="truncate text-lg font-black leading-tight text-white">{proximoAgendamento.servicos?.nome || 'Servico'}</p>
-                        <span className="shrink-0 text-[11px] font-bold text-zinc-500">{proximoAgendamento.duracao_minutos || proximoAgendamento.servicos?.duracao_minutos || 30} min</span>
+                        <p className="truncate text-lg font-black leading-tight text-white">{proximoAgendamento.planos?.nome || proximoAgendamento.servicos?.nome || 'Servico'}</p>
+                        <span className="shrink-0 text-[11px] font-bold text-zinc-500">{proximoAgendamento.duracao_minutos || proximoAgendamento.planos?.duracao_minutos || proximoAgendamento.servicos?.duracao_minutos || 30} min</span>
                       </div>
                     </div>
                     <p className="shrink-0 text-lg font-black leading-tight text-[#d5b451]">{formatarHora(proximoAgendamento.data_hora)}</p>
@@ -844,8 +844,8 @@ export default function BarbeiroDashboard() {
                               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                             </div>
                             <div className="min-w-0">
-                              <p className="truncate text-base font-black">{agendamento.servicos?.nome || 'Servico'}</p>
-                              <p className="mt-1 truncate text-xs text-zinc-500">{agendamento.clientes?.nome || 'Cliente'} - {agendamento.duracao_minutos || agendamento.servicos?.duracao_minutos || 30} min</p>
+                              <p className="truncate text-base font-black">{agendamento.planos?.nome || agendamento.servicos?.nome || 'Servico'}</p>
+                              <p className="mt-1 truncate text-xs text-zinc-500">{agendamento.clientes?.nome || 'Cliente'} - {agendamento.duracao_minutos || agendamento.planos?.duracao_minutos || agendamento.servicos?.duracao_minutos || 30} min</p>
                             </div>
                           </div>
                           <div className="shrink-0 text-right">
