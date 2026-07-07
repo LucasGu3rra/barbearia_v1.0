@@ -86,12 +86,14 @@ export default function ClienteDashboard() {
   const {
     modalCheckoutAberto,
     setModalCheckoutAberto,
+    pagamentoLoading,
     pixCopiado,
     copiarPix,
     alterarPlano,
     cancelarAgendamento,
     abrirCheckoutPlano,
     abrirWhatsappPagamento,
+    confirmarPagamentoPresencial,
   } = useClientePlanos({
     dados,
     setDados,
@@ -101,6 +103,7 @@ export default function ClienteDashboard() {
     carregarDados,
     chavePix: CHAVE_PIX,
     whatsappBarbearia: WHATSAPP_JOAO,
+    exibirAlerta,
     exibirConfirmacao,
     fecharModalAlerta,
     setMenuAberto,
@@ -207,6 +210,7 @@ export default function ClienteDashboard() {
           planoCliente={modoAgendamento === 'plano' ? dados : null}
           servicoInicialId={servicoAgendamentoInicial}
           voltarParaServicosAoVoltar={voltarParaServicosAoVoltar}
+          prazoCancelamentoMinutos={prazoCancelamentoMinutos}
         />
       )}
       <ClienteServicoPickerModal
@@ -351,9 +355,11 @@ export default function ClienteDashboard() {
         mapaPlanos={mapaPlanos}
         chavePix={CHAVE_PIX}
         pixCopiado={pixCopiado}
+        pagamentoLoading={pagamentoLoading}
         onClose={() => setModalCheckoutAberto(false)}
         onCopiarPix={copiarPix}
         onAbrirWhatsappPagamento={abrirWhatsappPagamento}
+        onConfirmarPagamentoPresencial={confirmarPagamentoPresencial}
       />
       <ClienteHistoricoModal
         isOpen={modalHistoricoAberto}

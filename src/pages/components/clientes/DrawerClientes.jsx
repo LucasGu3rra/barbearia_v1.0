@@ -165,6 +165,9 @@ export default function DrawerClientes({
   })();
 
   const planoPendente = tipoCliente === 'pendente' || dados.status === 'pendente';
+  const upgradePendente = dados.upgradePendente
+    ? planosDb.find((plano) => plano.slug === dados.upgradePendente)
+    : null;
 
   return (
     <div className={`fixed inset-0 z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
@@ -233,6 +236,18 @@ export default function DrawerClientes({
                 </button>
               )}
 
+              {!planoPendente && upgradePendente && (
+                <div className="mt-3 rounded-[10px] border border-[#d5b451]/25 bg-[#151207] p-3">
+                  <p className="text-sm font-black text-white">Upgrade pendente</p>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+                    {dados.planoNome} para {upgradePendente.nome}. Aguarde a confirmacao da barbearia.
+                  </p>
+                  <button type="button" onClick={cancelarAgendamento} className="mt-3 w-full rounded-[10px] border border-[#27272a] py-2.5 text-[10px] font-bold uppercase text-zinc-500">
+                    Cancelar solicitacao
+                  </button>
+                </div>
+              )}
+
               {!planoPendente && planosAbertos && (
                 <div className="mt-3 space-y-2">
                   {planosDb.map((plano) => (
@@ -252,6 +267,8 @@ export default function DrawerClientes({
                         <span className="rounded bg-[#d5b451] px-2 py-1 text-[9px] font-black text-black">Atual</span>
                       ) : dados.proximoPlano === plano.slug ? (
                         <span className="rounded border border-[#d5b451]/30 px-2 py-1 text-[8px] font-bold uppercase text-[#d5b451]">Agendado</span>
+                      ) : dados.upgradePendente === plano.slug ? (
+                        <span className="rounded border border-[#d5b451]/30 px-2 py-1 text-[8px] font-bold uppercase text-[#d5b451]">Upgrade</span>
                       ) : null}
                     </button>
                   ))}

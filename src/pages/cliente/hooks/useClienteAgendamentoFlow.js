@@ -3,6 +3,8 @@ import { montarRotaEmpresa } from '../../../services/empresa';
 import { notificarAgendamento } from '../../../services/notifications';
 import { supabase } from '../../../services/supabase';
 
+const CANCELAMENTO_ARREPENDIMENTO_MINUTOS = 5;
+
 export default function useClienteAgendamentoFlow({
   tipoCliente,
   dados,
@@ -124,8 +126,19 @@ export default function useClienteAgendamentoFlow({
   const podeCancelarAgendamento = (agendamento, prazoCancelamentoMinutos = 120) => {
     const dataAgendamento = agendamento?.data_hora ? new Date(agendamento.data_hora) : null;
     if (!dataAgendamento || Number.isNaN(dataAgendamento.getTime())) return false;
+    const agora = Date.now();
     const limite = dataAgendamento.getTime() - Number(prazoCancelamentoMinutos || 0) * 60000;
-    return Date.now() <= limite;
+    if (agora <= limite) return true;
+
+    const criadoEm = agendamento?.created_at ? new Date(agendamento.created_at) : null;
+    const isAssinante = String(agendamento?.tipo_cliente || '').toLowerCase() === 'assinante';
+    if (!isAssinante || !criadoEm || Number.isNaN(criadoEm.getTime())) return false;
+
+    const limiteArrependimento = Math.min(
+      criadoEm.getTime() + CANCELAMENTO_ARREPENDIMENTO_MINUTOS * 60000,
+      dataAgendamento.getTime()
+    );
+    return agora <= limiteArrependimento;
   };
 
   const cancelarAgendamentoCliente = (agendamento, prazoCancelamentoMinutos = 120) => {
@@ -134,7 +147,7 @@ export default function useClienteAgendamentoFlow({
     if (!podeCancelarAgendamento(agendamento, prazoCancelamentoMinutos)) {
       exibirAlerta(
         'Cancelamento indisponivel',
-        `Este agendamento so pode ser cancelado ate ${prazoCancelamentoMinutos} minutos antes do horario.`
+        `Este agendamento so pode ser cancelado ate ${prazoCancelamentoMinutos} minutos antes do horario. Para agendamentos com plano feitos em cima da hora, existe uma tolerancia de ${CANCELAMENTO_ARREPENDIMENTO_MINUTOS} minutos apos confirmar.`
       );
       return;
     }

@@ -10,6 +10,7 @@ export default function useClientePlanos({
   carregarDados,
   chavePix,
   whatsappBarbearia,
+  exibirAlerta,
   exibirConfirmacao,
   fecharModalAlerta,
   setMenuAberto,
@@ -17,6 +18,7 @@ export default function useClientePlanos({
   const [modalCheckoutAberto, setModalCheckoutAberto] = useState(false);
   const [metodoPagamento] = useState('pix');
   const [pixCopiado, setPixCopiado] = useState(false);
+  const [pagamentoLoading, setPagamentoLoading] = useState(false);
 
   const copiarPix = () => {
     navigator.clipboard.writeText(chavePix);
@@ -82,8 +84,8 @@ export default function useClientePlanos({
 
     if (valorNovo < valorAtual) {
       exibirConfirmacao(
-        'Agendar mudança',
-        `A mudança para ${mapaPlanos[novoPlanoId].nome} será aplicada no próximo vencimento (${dados.vencimentoFormatado}). Até lá, seu plano atual continua ativo.`,
+        'Agendar mudanca',
+        `A mudanca para ${mapaPlanos[novoPlanoId].nome} sera aplicada no proximo vencimento (${dados.vencimentoFormatado}). Ate la, seu plano atual continua ativo.`,
         () => efetuarAgendamentoDowngrade(novoPlanoId)
       );
       return;
@@ -94,12 +96,22 @@ export default function useClientePlanos({
 
   const cancelarAgendamento = () => {
     if (!dados) return;
+    const isUpgrade = Boolean(dados.upgradePendente);
+
     exibirConfirmacao(
-      'Cancelar mudança',
-      `Deseja cancelar a mudança agendada e manter seu plano atual (${dados.planoNome})?`,
+      isUpgrade ? 'Cancelar upgrade' : 'Cancelar mudanca',
+      isUpgrade
+        ? `Deseja cancelar a solicitacao de upgrade e manter seu plano atual (${dados.planoNome})?`
+        : `Deseja cancelar a mudanca agendada e manter seu plano atual (${dados.planoNome})?`,
       async () => {
         fecharModalAlerta();
-        await cancelarMudancaPlano();
+        try {
+          await cancelarMudancaPlano();
+          exibirAlerta?.('Cancelado', isUpgrade ? 'A solicitacao de upgrade foi cancelada.' : 'A mudanca agendada foi cancelada.');
+        } catch (error) {
+          console.error(error);
+          exibirAlerta?.('Erro', 'Nao foi possivel cancelar a solicitacao agora.');
+        }
       }
     );
   };
@@ -110,37 +122,76 @@ export default function useClientePlanos({
     setModalCheckoutAberto(true);
   };
 
+  const solicitarUpgradePendente = async () => {
+    if (!dados?.planoUpgradeId) throw new Error('Plano de upgrade nao informado.');
+
+    const { error } = await supabase.rpc('solicitar_upgrade_plano_cliente', {
+      p_empresa_id: empresaId,
+      p_plano_slug: dados.planoUpgradeId,
+    });
+
+    if (error) throw error;
+    await carregarDados(clienteIdAtual());
+  };
+
   const abrirWhatsappPagamento = async () => {
-    if (!dados) return;
+    if (!dados || pagamentoLoading) return;
     const isUpgrade = Boolean(dados.valorUpgrade);
-    let mensagem = `Olá! Me chamo *${dados.nome}*.\n`;
+    let mensagem = `Ola! Me chamo *${dados.nome}*.\n`;
 
-    if (isUpgrade) {
-      mensagem += `Estou solicitando o upgrade para o plano *${mapaPlanos[dados.planoUpgradeId].nome}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
-      const { error } = await supabase.rpc('solicitar_upgrade_plano_cliente', {
-        p_empresa_id: empresaId,
-        p_plano_slug: dados.planoUpgradeId,
-      });
+    setPagamentoLoading(true);
+    try {
+      if (isUpgrade) {
+        mensagem += `Estou solicitando o upgrade para o plano *${mapaPlanos[dados.planoUpgradeId]?.nome || 'selecionado'}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
+        await solicitarUpgradePendente();
+      } else {
+        mensagem += `Estou solicitando a ativacao do *Plano ${dados.planoNome}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
+        localStorage.setItem(`pagamento_plano_${empresaId}_${clienteIdAtual()}_${dados.planoId || 'sem-plano'}`, 'iniciado');
+      }
 
-      if (error) throw error;
-    } else {
-      mensagem += `Estou solicitando a ativação do *Plano ${dados.planoNome}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
-      localStorage.setItem(`pagamento_plano_${empresaId}_${clienteIdAtual()}_${dados.planoId || 'sem-plano'}`, 'iniciado');
+      window.open(`https://wa.me/${whatsappBarbearia}?text=${encodeURIComponent(mensagem)}`, '_blank');
+      setModalCheckoutAberto(false);
+      if (isUpgrade) exibirAlerta?.('Upgrade solicitado', 'Seu pedido de upgrade foi enviado. Aguarde a confirmacao da barbearia.');
+    } catch (error) {
+      console.error(error);
+      exibirAlerta?.('Erro', 'Nao foi possivel registrar o pagamento agora. Tente novamente.');
+    } finally {
+      setPagamentoLoading(false);
     }
+  };
 
-    window.open(`https://wa.me/${whatsappBarbearia}?text=${encodeURIComponent(mensagem)}`, '_blank');
-    setModalCheckoutAberto(false);
-    if (isUpgrade) carregarDados(clienteIdAtual());
+  const confirmarPagamentoPresencial = async () => {
+    if (!dados || pagamentoLoading) return;
+    const isUpgrade = Boolean(dados.valorUpgrade);
+
+    setPagamentoLoading(true);
+    try {
+      if (isUpgrade) {
+        await solicitarUpgradePendente();
+        exibirAlerta?.('Upgrade solicitado', 'A solicitacao ficou registrada. Pague na barbearia para o admin confirmar.');
+      } else {
+        localStorage.setItem(`pagamento_plano_${empresaId}_${clienteIdAtual()}_${dados.planoId || 'sem-plano'}`, 'presencial');
+        exibirAlerta?.('Pagamento presencial', 'Sua solicitacao ja esta pendente. Pague na barbearia para o admin confirmar.');
+      }
+      setModalCheckoutAberto(false);
+    } catch (error) {
+      console.error(error);
+      exibirAlerta?.('Erro', 'Nao foi possivel registrar o pagamento presencial agora.');
+    } finally {
+      setPagamentoLoading(false);
+    }
   };
 
   return {
     modalCheckoutAberto,
     setModalCheckoutAberto,
+    pagamentoLoading,
     pixCopiado,
     copiarPix,
     alterarPlano,
     cancelarAgendamento,
     abrirCheckoutPlano,
     abrirWhatsappPagamento,
+    confirmarPagamentoPresencial,
   };
 }

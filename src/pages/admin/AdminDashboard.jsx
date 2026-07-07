@@ -184,11 +184,13 @@ export default function AdminDashboard() {
 
       const mapaPlanos = {};
       dadosPlanos?.forEach(p => {
+        const precoNumero = Number(p.preco || 0);
         mapaPlanos[p.slug] = { 
           nome: p.nome, 
           limite: p.limite,
           ilimitado: Boolean(p.ilimitado),
-          preco: `R$ ${Number(p.preco).toFixed(2).replace('.', ',')}/mês` 
+          precoNumero,
+          preco: `R$ ${precoNumero.toFixed(2).replace('.', ',')}/mês` 
         };
       });
       setPlanosInfo(mapaPlanos);
@@ -295,6 +297,22 @@ export default function AdminDashboard() {
     showConfirm('Confirmar pagamento', `Confirmar recebimento e ativar ou renovar o plano de ${nomeCliente} por 30 dias?`, () => efetuarAtivacao(assinaturaId));
   };
 
+  const confirmarUpgrade = (item) => {
+    const planoAtual = planosInfo[item.assinatura.plano_escolhido]?.nome || 'Plano atual';
+    const planoNovo = planosInfo[item.assinatura.upgrade_pendente]?.nome || 'Novo plano';
+    const diferenca = Math.max(
+      0,
+      Number(planosInfo[item.assinatura.upgrade_pendente]?.precoNumero || 0)
+      - Number(planosInfo[item.assinatura.plano_escolhido]?.precoNumero || 0)
+    );
+
+    showConfirm(
+      'Confirmar upgrade',
+      `Confirmar upgrade de ${item.nome}?\n\n${planoAtual} -> ${planoNovo}\nDiferenca: R$ ${diferenca.toFixed(2).replace('.', ',')}\n\nO vencimento atual sera mantido.`,
+      () => efetuarUpgrade(item.assinatura.id)
+    );
+  };
+
   const efetuarAtivacao = async (assinaturaId) => {
     fecharModal();
     try {
@@ -317,6 +335,31 @@ export default function AdminDashboard() {
       showAlert('Sucesso', 'Pagamento confirmado. O plano foi ativado e o ciclo de 30 dias foi iniciado.');
     } catch (error) {
       showAlert('Erro', 'Não foi possível confirmar o pagamento: ' + error.message);
+    }
+  };
+
+  const efetuarUpgrade = async (assinaturaId) => {
+    fecharModal();
+    try {
+      const assinaturaUpgrade = aguardandoUpgrade.find((item) => item.assinatura.id === assinaturaId);
+      const { error } = await supabase.rpc('confirmar_upgrade_plano', {
+        p_assinatura_id: assinaturaId,
+      });
+      if (error) throw error;
+      if (assinaturaUpgrade?.id) {
+        enviarPushParaUsuarios({
+          empresaId,
+          userIds: [assinaturaUpgrade.id],
+          titulo: 'Upgrade confirmado',
+          corpo: 'Seu upgrade de plano foi confirmado pela barbearia.',
+          tipo: 'upgrade_confirmado',
+          dados: { url: montarRotaEmpresa(empresaSlug, '/dashboard') },
+        });
+      }
+      carregarDados();
+      showAlert('Sucesso', 'Upgrade confirmado. O plano foi alterado mantendo o vencimento atual.');
+    } catch (error) {
+      showAlert('Erro', 'Nao foi possivel confirmar o upgrade: ' + error.message);
     }
   };
 
@@ -495,12 +538,19 @@ export default function AdminDashboard() {
   const novosItensPrimeiraAba = agendamentoAtivo ? novosAgendamentos : novosCortes;
 
   const aguardandoAtivacao = [];
+  const aguardandoUpgrade = [];
   clientes.forEach(cliente => {
     const pendentes = (cliente.assinaturas || []).filter(a => a.status === 'pendente');
     pendentes.forEach(assinaturaPendente => {
       aguardandoAtivacao.push({ ...cliente, assinatura: assinaturaPendente });
     });
+
+    const upgrades = (cliente.assinaturas || []).filter(a => a.status === 'ativa' && a.upgrade_pendente);
+    upgrades.forEach(assinaturaUpgrade => {
+      aguardandoUpgrade.push({ ...cliente, assinatura: assinaturaUpgrade });
+    });
   });
+  const totalAguardandoPlanos = aguardandoAtivacao.length + aguardandoUpgrade.length;
 
   const calcularRenda = () => {
     let faturamentoMensal = 0;
@@ -783,7 +833,7 @@ export default function AdminDashboard() {
         </div>
       </nav>
 
-      {abaAtiva !== 'historico' && abaAtiva !== 'agenda' && aguardandoAtivacao.length > 0 && (
+      {abaAtiva !== 'historico' && abaAtiva !== 'agenda' && totalAguardandoPlanos > 0 && (
         <section className="mb-8">
           <button 
             onClick={() => setMostrarAguardando(!mostrarAguardando)}
@@ -792,14 +842,17 @@ export default function AdminDashboard() {
             <span className="flex items-center gap-2">
               <span>Aguardando Ativação</span>
               <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-[#CEAA6B] px-2 text-[11px] font-black text-black shadow-[0_0_18px_rgba(206,170,107,0.35)]">
-                {aguardandoAtivacao.length > 99 ? '99+' : aguardandoAtivacao.length}
+                {totalAguardandoPlanos > 99 ? '99+' : totalAguardandoPlanos}
               </span>
             </span>
             <svg className={`transition-transform duration-300 ${mostrarAguardando ? 'rotate-180' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
           
           {mostrarAguardando && (
-            <div className="space-y-3 animate-[fadeIn_0.2s_ease-out]">
+            <div className="space-y-5 animate-[fadeIn_0.2s_ease-out]">
+              {aguardandoAtivacao.length > 0 && aguardandoUpgrade.length > 0 && (
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-600">Planos novos</p>
+              )}
               {aguardandoAtivacao.map((item, index) => (
                 <div key={`${item.id}-${index}`} className="bg-[#121212] border border-[#27272a] rounded-[20px] p-5 flex justify-between items-center">
                   <div>
@@ -817,6 +870,39 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               ))}
+              {aguardandoUpgrade.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-600">Aguardando upgrade</p>
+                  {aguardandoUpgrade.map((item, index) => {
+                    const planoAtual = planosInfo[item.assinatura.plano_escolhido];
+                    const planoNovo = planosInfo[item.assinatura.upgrade_pendente];
+                    const diferenca = Math.max(0, Number(planoNovo?.precoNumero || 0) - Number(planoAtual?.precoNumero || 0));
+                    return (
+                      <div key={`upgrade-${item.id}-${index}`} className="bg-[#121212] border border-[#CEAA6B]/30 rounded-[20px] p-5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-lg leading-tight"><span>{item.nome}</span></h3>
+                            <p className="text-[#CEAA6B] text-[10px] font-bold uppercase mt-1">
+                              <span>{planoAtual?.nome || 'Plano atual'} -&gt; {planoNovo?.nome || 'Novo plano'}</span>
+                            </p>
+                            <p className="text-zinc-500 text-[10px] mt-1"><span>Diferenca: R$ {diferenca.toFixed(2).replace('.', ',')} • Vence {formatarData(item.assinatura.data_vencimento)}</span></p>
+                            <p className="text-zinc-500 text-[10px] mt-1"><span>WhatsApp: {item.whatsapp}</span></p>
+                          </div>
+                          <span className="shrink-0 rounded-full border border-[#CEAA6B]/30 bg-[#CEAA6B]/10 px-2.5 py-1 text-[8px] font-black uppercase tracking-wider text-[#CEAA6B]">
+                            Upgrade
+                          </span>
+                        </div>
+                        <button 
+                          onClick={() => confirmarUpgrade(item)}
+                          className="mt-4 w-full bg-[#CEAA6B] text-black font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl active:scale-95 transition-transform"
+                        >
+                          Confirmar upgrade
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </section>

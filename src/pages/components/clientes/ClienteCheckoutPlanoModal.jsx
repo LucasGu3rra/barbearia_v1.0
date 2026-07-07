@@ -6,9 +6,11 @@ export default function ClienteCheckoutPlanoModal({
   mapaPlanos,
   chavePix,
   pixCopiado,
+  pagamentoLoading = false,
   onClose,
   onCopiarPix,
   onAbrirWhatsappPagamento,
+  onConfirmarPagamentoPresencial = () => {},
 }) {
   if (!isOpen || !dados) return null;
 
@@ -59,9 +61,9 @@ export default function ClienteCheckoutPlanoModal({
             </ul>
           </div>
 
-          <button className="btn primary flex items-center justify-center gap-2" onClick={onAbrirWhatsappPagamento}>
+          <button className="btn primary flex items-center justify-center gap-2" onClick={onAbrirWhatsappPagamento} disabled={pagamentoLoading}>
             <Icon name="whatsapp" className="w-4 h-4" />
-            Enviar comprovante no WhatsApp
+            {pagamentoLoading ? 'Registrando...' : 'Enviar comprovante no WhatsApp'}
           </button>
 
           <div className="alert warn">
@@ -72,7 +74,12 @@ export default function ClienteCheckoutPlanoModal({
           </div>
 
           <div className="sec">OUTRAS FORMAS</div>
-          <div className="card">
+          <button
+            type="button"
+            onClick={onConfirmarPagamentoPresencial}
+            disabled={pagamentoLoading}
+            className="card w-full text-left active:scale-[0.99] transition-transform disabled:opacity-60"
+          >
             <div className="flex items-center gap-3">
               <Icon name="store" className="w-5 h-5 text-zinc-500" />
               <div>
@@ -80,7 +87,7 @@ export default function ClienteCheckoutPlanoModal({
                 <div className="text-zinc-500 text-xs mt-0.5">Pagamento presencial na barbearia</div>
               </div>
             </div>
-          </div>
+          </button>
 
           <button onClick={onClose} className="btn ghost">Fazer depois</button>
         </div>

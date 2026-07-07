@@ -4,6 +4,7 @@ import { supabase } from '../../services/supabase';
 import { notificarAgendamento } from '../../services/notifications';
 import ClienteAgendamentoStepBar from './clientes/ClienteAgendamentoStepBar';
 
+const CANCELAMENTO_ARREPENDIMENTO_MINUTOS = 5;
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 const gerarProximosDias = (quantidadeDias = 28) => {
@@ -102,6 +103,7 @@ export default function ModalAgendamento({
   planoCliente = null,
   servicoInicialId = null,
   voltarParaServicosAoVoltar = false,
+  prazoCancelamentoMinutos = 120,
 }) {
   const [step, setStep] = useState(1);
   const [carregando, setCarregando] = useState(true);
@@ -109,6 +111,7 @@ export default function ModalAgendamento({
   const [erro, setErro] = useState('');
   const [confirmado, setConfirmado] = useState(false);
   const [servicoPreSelecionado, setServicoPreSelecionado] = useState(false);
+  const [instanteAvisoCancelamento, setInstanteAvisoCancelamento] = useState(null);
 
   const [filiais, setFiliais] = useState([]);
   const [barbeiros, setBarbeiros] = useState([]);
@@ -123,6 +126,21 @@ export default function ModalAgendamento({
 
   const isAssinante = tipoCliente === 'assinante';
   const duracaoServico = Number((isAssinante && planoCliente?.duracaoMinutos) || servicoSelecionado?.duracao_minutos || 30);
+  const dataHoraSelecionada = dataSelecionada && horarioSelecionado ? criarDataHora(dataSelecionada, horarioSelecionado) : null;
+  const agendamentoDentroPrazoCancelamento = Boolean(
+    isAssinante
+    && dataHoraSelecionada
+    && instanteAvisoCancelamento
+    && instanteAvisoCancelamento > dataHoraSelecionada.getTime() - Number(prazoCancelamentoMinutos || 0) * 60000
+  );
+  const horarioLimiteArrependimento = useMemo(() => {
+    if (!dataHoraSelecionada || !instanteAvisoCancelamento) return '';
+    const limite = new Date(Math.min(
+      instanteAvisoCancelamento + CANCELAMENTO_ARREPENDIMENTO_MINUTOS * 60000,
+      dataHoraSelecionada.getTime()
+    ));
+    return limite.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }, [dataHoraSelecionada, instanteAvisoCancelamento]);
 
   const carregarDados = useCallback(async () => {
     setCarregando(true);
@@ -168,6 +186,7 @@ export default function ModalAgendamento({
     setConfirmado(false);
     setServicoSelecionado(null);
     setServicoPreSelecionado(false);
+    setInstanteAvisoCancelamento(null);
     setDataSelecionada(null);
     setHorarioSelecionado(null);
     setBarbeiroSelecionado(null);
@@ -348,6 +367,11 @@ export default function ModalAgendamento({
     }
 
     return barbeiroLivre.id;
+  };
+
+  const irParaConfirmacaoAgendamento = () => {
+    setInstanteAvisoCancelamento(Date.now());
+    setStep(4);
   };
 
   const confirmarAgendamento = async () => {
@@ -566,7 +590,7 @@ export default function ModalAgendamento({
                     </button>
                   )}
 
-                  <button className="btn primary" onClick={() => setStep(4)} disabled={barbeirosDaFilial.length === 0} style={{ marginTop: '8px' }}>Próximo</button>
+                  <button className="btn primary" onClick={irParaConfirmacaoAgendamento} disabled={barbeirosDaFilial.length === 0} style={{ marginTop: '8px' }}>Próximo</button>
                 </div>
               </div>
             )}
@@ -586,6 +610,17 @@ export default function ModalAgendamento({
                     <div className="crow"><span className="cl">Barbeiro</span><span className="cv">{barbeiroSelecionado?.nome || 'Sem preferência'}</span></div>
                     <div className="crow"><span className="cl">Valor</span><span className="cv" style={{ color: 'var(--client-gold)' }}>{isAssinante ? 'Incluido no plano' : `R$ ${Number(servicoSelecionado?.preco || 0).toFixed(0)}`}</span></div>
                   </div>
+                  {isAssinante && (
+                    <div className="rounded-[16px] border border-[#d5b451]/30 bg-[#d5b451]/10 p-4 mb-3 text-left">
+                      <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.2em] mb-2">Uso do plano</p>
+                      <p className="text-[#f5ead4] text-xs leading-relaxed font-semibold">
+                        Ao confirmar, este agendamento consome 1 uso do seu plano imediatamente.
+                        {agendamentoDentroPrazoCancelamento
+                          ? ` Como o horario agendado excedeu o prazo normal de cancelamento de ${prazoCancelamentoMinutos} min de antecedencia, voce podera cancelar apenas por ${CANCELAMENTO_ARREPENDIMENTO_MINUTOS} minutos apos confirmar, ate ${horarioLimiteArrependimento}. Depois disso o uso nao sera devolvido.`
+                          : ` Se cancelar ate ${prazoCancelamentoMinutos} minutos antes do horario, o uso volta para o seu plano.`}
+                      </p>
+                    </div>
+                  )}
                   {erro && <p className="text-red-500 text-xs text-center mb-2">{erro}</p>}
                   <button className="btn primary" onClick={confirmarAgendamento} disabled={salvando}>
                     {salvando ? 'Confirmando...' : 'Confirmar agendamento'}
@@ -604,7 +639,7 @@ export default function ModalAgendamento({
                   <div style={{ color: 'var(--client-gold)', fontSize: '11px', letterSpacing: '2px', marginBottom: '8px' }}>CONFIRMADO</div>
                   <div style={{ color: 'var(--client-text)', fontSize: '36px', fontWeight: 900, marginBottom: '6px' }}>AGENDADO!</div>
                   <div style={{ color: 'var(--client-s6)', fontSize: '13px', marginBottom: '28px', lineHeight: 1.7, textAlign: 'center' }}>
-                    Seu horário está reservado.<br />Você receberá um lembrete.
+                    Seu horário está reservado.<br />{isAssinante ? '1 uso do plano foi consumido.' : 'Você receberá um lembrete.'}
                   </div>
                   <button className="btn primary" onClick={fechar}>Voltar ao início</button>
                 </div>
