@@ -1,10 +1,65 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePwaInstall } from '../../contexts/usePwaInstall';
 import { useAuth } from '../../contexts/useAuth';
 import { supabase } from '../../services/supabase';
 import { LOGO_PADRAO_URL, resolverLogoEmpresa } from '../../services/empresa';
 
 const LOGO_BUCKET = 'logos-empresas';
+const PRAZO_STATUS_VENCENDO_DIAS = 7;
+
+const obterStatusAssinatura = (resumo) => {
+  const assinatura = resumo?.assinatura;
+  const mensalidade = resumo?.mensalidade_aberta;
+
+  if (!assinatura) {
+    return {
+      texto: 'Status indisponivel',
+      classes: 'border-zinc-700 bg-zinc-800/60 text-zinc-400',
+    };
+  }
+
+  if (assinatura.sem_vencimento) {
+    return {
+      texto: 'Ilimitado',
+      classes: 'border-[#d5b451]/50 bg-[#d5b451]/12 text-[#e8ca6b] shadow-[0_0_14px_rgba(213,180,81,0.28)]',
+    };
+  }
+
+  const status = String(assinatura.status || '').toLowerCase();
+  const statusMensalidade = String(mensalidade?.status || '').toLowerCase();
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const vencimento = assinatura.proximo_vencimento
+    ? new Date(`${assinatura.proximo_vencimento}T00:00:00`)
+    : null;
+  const vencimentoValido = vencimento && !Number.isNaN(vencimento.getTime());
+  const vencido = ['vencido', 'suspenso', 'cancelado'].includes(status)
+    || statusMensalidade === 'vencida'
+    || (vencimentoValido && vencimento < hoje);
+
+  if (vencido) {
+    return {
+      texto: 'Vencido',
+      classes: 'border-red-500/35 bg-red-500/10 text-red-400',
+    };
+  }
+
+  if (vencimentoValido) {
+    const diasAteVencimento = Math.ceil((vencimento.getTime() - hoje.getTime()) / 86400000);
+    if (diasAteVencimento <= PRAZO_STATUS_VENCENDO_DIAS) {
+      return {
+        texto: 'Vencendo',
+        classes: 'border-amber-400/35 bg-amber-400/10 text-amber-300',
+      };
+    }
+  }
+
+  return {
+    texto: 'Ativo',
+    classes: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-400',
+  };
+};
 
 const caminhoLogoStorage = (logoUrl, empresaId) => {
   const valor = String(logoUrl || '').trim();
@@ -33,8 +88,6 @@ export default function DrawerAdmin({
   onOpenBarbeiros,
   onOpenServicos,
   onOpenConfiguracoes,
-  onOpenHistorico,
-  novosCortes = 0,
 }) {
   const [modalFinanceiro, setModalFinanceiro] = useState(false);
   const [configAberto, setConfigAberto] = useState(false);
@@ -47,12 +100,42 @@ export default function DrawerAdmin({
   const [chavePix, setChavePix] = useState('');
   const [pixErro, setPixErro] = useState('');
   const [salvandoPix, setSalvandoPix] = useState(false);
+  const [resumoAssinatura, setResumoAssinatura] = useState(null);
   const { canInstall, installApp } = usePwaInstall();
   const { empresaAtual, selecionarEmpresaPorSlug } = useAuth();
+
+  useEffect(() => {
+    if (!isOpen || !empresaAtual?.id) return undefined;
+
+    let ativo = true;
+
+    const carregarAssinatura = async () => {
+      const { data, error } = await supabase.rpc('empresa_assinatura_sistema_resumo', {
+        p_empresa_id: empresaAtual.id,
+      });
+
+      if (!ativo) return;
+
+      if (error) {
+        console.error('Nao foi possivel carregar o status da assinatura da empresa.', error);
+        setResumoAssinatura(null);
+        return;
+      }
+
+      setResumoAssinatura(data || null);
+    };
+
+    carregarAssinatura();
+
+    return () => {
+      ativo = false;
+    };
+  }, [isOpen, empresaAtual?.id]);
 
   if (!isOpen) return null;
 
   const logoAtualStoragePath = caminhoLogoStorage(empresaAtual?.logo_url, empresaAtual?.id);
+  const statusAssinatura = obterStatusAssinatura(resumoAssinatura);
 
   const formatarMoeda = (valor) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
@@ -239,11 +322,33 @@ export default function DrawerAdmin({
 
       {/* Drawer */}
       <div className="fixed right-0 top-0 h-full w-72 bg-[#09090b] border-l border-[#27272a] z-[70] p-6 flex flex-col animate-[slideIn_0.3s_ease-out]">
-        <div className="flex justify-between items-center mb-10">
-          <h2 className="text-[#CEAA6B] font-bold uppercase tracking-widest text-sm">Menu Admin</h2>
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-[#CEAA6B] font-bold uppercase tracking-widest text-sm">Menu</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
+        </div>
+
+        <div className="mb-5 flex items-center gap-3 rounded-[14px] border border-[#27272a] bg-[#121212] p-3">
+          <img
+            src={resolverLogoEmpresa(empresaAtual?.logo_url)}
+            alt="Logo da barbearia"
+            className="h-11 w-11 shrink-0 rounded-full border border-[#CEAA6B]/35 bg-black object-cover"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-black text-white">
+              {empresaAtual?.nome || 'Barbearia'}
+            </p>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <span className="text-[9px] font-black uppercase tracking-[0.12em] text-zinc-500">
+                Plano
+              </span>
+              <span className="h-3 w-px bg-zinc-700" aria-hidden="true" />
+              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] ${statusAssinatura.classes}`}>
+                {statusAssinatura.texto}
+              </span>
+            </div>
+          </div>
         </div>
 
         <nav className="flex-1 space-y-3 overflow-y-auto">
@@ -260,22 +365,6 @@ export default function DrawerAdmin({
               <span className="mt-0.5 block truncate text-[11px] text-zinc-500">Renda e previsão</span>
             </div>
           </button>
-
-          {/* Instalar app */}
-          {canInstall && (
-            <button
-              onClick={instalarApp}
-              className="flex w-full items-center gap-3 rounded-[10px] border border-[#27272a] bg-[#121212] p-3 text-white transition-all active:scale-[0.99]"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#2c281b] text-[#d5b451]">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><rect x="4" y="17" width="16" height="4" rx="1"></rect></svg>
-              </div>
-              <div className="min-w-0 text-left">
-                <span className="block truncate text-sm font-bold">Instalar app</span>
-                <span className="mt-0.5 block truncate text-[11px] text-zinc-500">Adicionar na tela inicial</span>
-              </div>
-            </button>
-          )}
 
           <button
             onClick={() => { if(onOpenPlanos) onOpenPlanos(); onClose(); }}
@@ -301,24 +390,6 @@ export default function DrawerAdmin({
             <div className="min-w-0 text-left">
               <span className="block truncate text-sm font-bold">Serviços</span>
               <span className="mt-0.5 block truncate text-[11px] text-zinc-500">Categorias e avulsos</span>
-            </div>
-          </button>
-
-          <button
-            onClick={() => { if(onOpenHistorico) onOpenHistorico(); onClose(); }}
-            className="relative flex w-full items-center gap-3 rounded-[10px] border border-[#27272a] bg-[#121212] p-3 text-white transition-all active:scale-[0.99]"
-          >
-            {novosCortes > 0 && (
-              <span className="absolute right-3 top-3 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#CEAA6B] px-1 text-[10px] font-black text-black shadow-[0_0_0_2px_#121212]">
-                {novosCortes > 9 ? '9+' : novosCortes}
-              </span>
-            )}
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#2c281b] text-[#d5b451]">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-            </div>
-            <div className="min-w-0 text-left">
-              <span className="block truncate text-sm font-bold">Histórico</span>
-              <span className="mt-0.5 block truncate text-[11px] text-zinc-500">Cortes realizados</span>
             </div>
           </button>
 
@@ -349,6 +420,21 @@ export default function DrawerAdmin({
             {/* Submenu accordion */}
             <div className={`overflow-hidden transition-all duration-300 ${configAberto ? 'max-h-96 opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
               <div className="ml-3 space-y-1.5 border-l border-[#27272a] pl-3">
+
+                {canInstall && (
+                  <button
+                    onClick={instalarApp}
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl bg-[#121212] border border-[#27272a] text-white hover:border-[#CEAA6B]/50 hover:bg-[#18181b] transition-all group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-[#2c281b] flex items-center justify-center text-[#d5b451] group-hover:bg-[#d5b451] group-hover:text-black transition-all flex-shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><rect x="4" y="17" width="16" height="4" rx="1"></rect></svg>
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <span className="block font-bold text-xs">Instalar app</span>
+                      <span className="block text-[9px] text-zinc-500 uppercase tracking-wider">Adicionar na tela inicial</span>
+                    </div>
+                  </button>
+                )}
 
                 <button
                   onClick={abrirModalLogo}
@@ -434,9 +520,9 @@ export default function DrawerAdmin({
           </div>
         </nav>
 
-        <button onClick={onLogout} className="mt-6 w-full flex items-center justify-center gap-2 p-4 rounded-2xl bg-red-500/5 text-red-500/60 font-bold text-xs uppercase tracking-widest hover:bg-red-500/10 hover:text-red-500 transition-all border border-transparent hover:border-red-500/20">
+        <button onClick={onLogout} className="mt-6 w-full flex items-center justify-center gap-2 p-4 rounded-2xl border border-zinc-700 bg-[#1b1b1d] text-zinc-200 font-bold text-xs uppercase tracking-widest transition-all active:scale-[0.98] hover:border-zinc-600 hover:bg-[#232326]">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-          Sair do Painel
+          Sair da conta
         </button>
       </div>
 

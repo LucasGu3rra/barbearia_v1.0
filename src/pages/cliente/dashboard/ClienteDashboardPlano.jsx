@@ -154,13 +154,16 @@ export default function ClienteDashboardPlano({
   prazoCancelamentoMinutos = 120,
   agendamentoAtivo,
   onAbrirAgendamentoPlano,
+  onRenovarPlano,
   onAbrirOutroServico,
   onConfirmarCortePlano,
   onVerAgendamento,
   onCancelarAgendamento,
 }) {
   const planoAtivo = statusPlano === 'ativo';
-  const podeAgendarComPlano = planoAtivo && agendamentoAtivo;
+  const semUsos = planoAtivo && !dados.ilimitado && Number(dados.cortesRestantes || 0) <= 0;
+  const renovacaoPendente = Boolean(dados.renovacaoPendente);
+  const podeAgendarComPlano = planoAtivo && agendamentoAtivo && !semUsos;
   const podeAgendarAvulso = agendamentoAtivo;
   const podeConfirmarCorte = planoAtivo && (!dados.ilimitado ? Number(dados.cortesRestantes || 0) > 0 : true);
   const usados = Math.max(0, Number(dados.limiteTotal || 0) - Number(dados.cortesRestantes || 0));
@@ -231,19 +234,19 @@ export default function ClienteDashboardPlano({
             <>
               {agendamentoAtivo ? (
                 <ActionCard
-                  icon={planoAtivo ? 'calendar' : 'clock'}
-                  title={planoAtivo ? 'Agendar com plano' : 'Plano pendente'}
-                  subtitle={planoAtivo ? 'serviço incluso' : 'aguarde ativação'}
-                  onClick={onAbrirAgendamentoPlano}
-                  disabled={!podeAgendarComPlano}
+                  icon={semUsos ? 'clock' : planoAtivo ? 'calendar' : 'clock'}
+                  title={renovacaoPendente ? 'Renovação pendente' : semUsos ? 'Renovar plano' : planoAtivo ? 'Agendar com plano' : 'Plano pendente'}
+                  subtitle={renovacaoPendente ? 'aguarde confirmação' : semUsos ? 'usos encerrados' : planoAtivo ? 'serviço incluso' : 'aguarde ativação'}
+                  onClick={semUsos ? onRenovarPlano : onAbrirAgendamentoPlano}
+                  disabled={renovacaoPendente || (!semUsos && !podeAgendarComPlano)}
                 />
               ) : (
                 <ActionCard
-                  icon={planoAtivo ? 'check' : 'clock'}
-                  title={planoAtivo ? 'Confirmar corte' : 'Plano pendente'}
-                  subtitle={planoAtivo ? 'consome 1 uso do plano' : 'aguarde ativação'}
-                  onClick={onConfirmarCortePlano}
-                  disabled={!podeConfirmarCorte}
+                  icon={semUsos ? 'clock' : planoAtivo ? 'check' : 'clock'}
+                  title={renovacaoPendente ? 'Renovação pendente' : semUsos ? 'Renovar plano' : planoAtivo ? 'Confirmar corte' : 'Plano pendente'}
+                  subtitle={renovacaoPendente ? 'aguarde confirmação' : semUsos ? 'usos encerrados' : planoAtivo ? 'consome 1 uso do plano' : 'aguarde ativação'}
+                  onClick={semUsos ? onRenovarPlano : onConfirmarCortePlano}
+                  disabled={renovacaoPendente || (!semUsos && !podeConfirmarCorte)}
                 />
               )}
               <ActionCard

@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../../services/supabase';
 import { montarRotaEmpresa } from '../../../services/empresa';
 import { parseDataSupabase } from '../utils/clienteDashboardUtils';
@@ -56,6 +56,10 @@ export default function useClienteDashboardData({
   const [planosDb, setPlanosDb] = useState([]);
   const [mapaPlanos, setMapaPlanos] = useState({});
   const [prazoCancelamentoMinutos, setPrazoCancelamentoMinutos] = useState(120);
+  const [planoAtivadoEvento, setPlanoAtivadoEvento] = useState(null);
+  const tipoClienteRef = useRef(null);
+  const ativadaEmRef = useRef(null);
+  const limparPlanoAtivadoEvento = useCallback(() => setPlanoAtivadoEvento(null), []);
 
   const clienteIdAtual = useCallback(() => getClienteId(user?.id), [user?.id]);
 
@@ -94,7 +98,7 @@ export default function useClienteDashboardData({
         .from('clientes')
         .select(`
           nome, whatsapp, email, alteracoes_nome,
-          assinaturas(status, ativada_em, data_vencimento, plano_escolhido, proximo_plano, upgrade_pendente, created_at),
+          assinaturas(status, ativada_em, data_vencimento, plano_escolhido, proximo_plano, upgrade_pendente, created_at, solicitacao_plano_slug, solicitacao_plano_nome, solicitacao_plano_preco, solicitacao_tipo, solicitacao_forma_pagamento, solicitacao_em),
           historico_cortes(id, created_at, tipo_corte, status, origem, plano_slug, cancelavel_ate, cancelado_em)
         `)
         .eq('empresa_id', empresaId)
@@ -131,6 +135,7 @@ export default function useClienteDashboardData({
 
       const cortesDoCiclo = (cli.historico_cortes || [])
         .filter(c => String(c.status || 'feito').toLowerCase() !== 'cancelado')
+        .filter(c => Boolean(c.plano_slug) || c.origem === 'plano_confirmacao')
         .filter(c => dentroDoCiclo(c.created_at))
         .sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at));
       const agendamentosPlanoCiclo = (dadosAgendamentos || [])
@@ -174,6 +179,8 @@ export default function useClienteDashboardData({
         vencimentoFormatado: ass?.data_vencimento
           ? new Date(ass.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
           : '--/--',
+        dataVencimento: ass?.data_vencimento || null,
+        ativadaEm: ass?.ativada_em || null,
         planoId: tipo === 'avulso' ? null : ass?.plano_escolhido || null,
         planoNome: planoInfo?.nome || 'Plano',
         planoUuid: planoInfo?.id || null,
@@ -181,6 +188,9 @@ export default function useClienteDashboardData({
         precoPlano: planoInfo?.preco || 0,
         proximoPlano: ass?.proximo_plano,
         upgradePendente: ass?.upgrade_pendente,
+        renovacaoPendente: ass?.solicitacao_tipo === 'renovacao',
+        solicitacaoPlanoSlug: ass?.solicitacao_plano_slug || null,
+        solicitacaoPlanoNome: ass?.solicitacao_plano_nome || null,
         planoVencido: tipo === 'vencido',
       });
     } catch (err) {
@@ -206,6 +216,52 @@ export default function useClienteDashboardData({
     carregarDados(clienteId);
   }, [navigate, authLoading, empresaId, empresaSlug, empresaAtual?.slug, clienteIdAtual, carregarDados]);
 
+  useEffect(() => {
+    tipoClienteRef.current = tipoCliente;
+    ativadaEmRef.current = dados?.ativadaEm || null;
+  }, [dados?.ativadaEm, tipoCliente]);
+
+  useEffect(() => {
+    const clienteId = user?.id;
+    if (!empresaId || !clienteId) return undefined;
+
+    const channel = supabase
+      .channel(`cliente-assinatura-${empresaId}-${clienteId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'assinaturas',
+          filter: `empresa_id=eq.${empresaId}`,
+        },
+        (payload) => {
+          const assinaturaNova = payload.new || {};
+          if (assinaturaNova.cliente_id !== clienteId) return;
+
+          const foiAtivada = assinaturaNova.status === 'ativa'
+            && (
+              tipoClienteRef.current !== 'ativo'
+              || assinaturaNova.ativada_em !== ativadaEmRef.current
+            );
+
+          if (foiAtivada) {
+            setPlanoAtivadoEvento({
+              id: `${assinaturaNova.id}-${assinaturaNova.ativada_em || Date.now()}`,
+              planoSlug: assinaturaNova.plano_escolhido,
+            });
+          }
+
+          carregarDados(clienteId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [carregarDados, empresaId, user?.id]);
+
   return {
     dados,
     setDados,
@@ -219,6 +275,8 @@ export default function useClienteDashboardData({
     planosDb,
     mapaPlanos,
     prazoCancelamentoMinutos,
+    planoAtivadoEvento,
+    limparPlanoAtivadoEvento,
     clienteIdAtual,
     carregarDados,
   };

@@ -49,8 +49,8 @@ export default function ClienteDashboard() {
   const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
   const avisoPlanoVencidoExibidoRef = useRef(false);
 
-  const CHAVE_PIX = empresaAtual?.chave_pix || '81988468182';
-  const WHATSAPP_JOAO = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '5581988468182');
+  const CHAVE_PIX = String(empresaAtual?.chave_pix || '').trim();
+  const WHATSAPP_JOAO = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '');
   const empresaNome = (empresaAtual?.nome || 'JOAO BARBER').toUpperCase();
 
   const {
@@ -66,6 +66,8 @@ export default function ClienteDashboard() {
     planosDb,
     mapaPlanos,
     prazoCancelamentoMinutos,
+    planoAtivadoEvento,
+    limparPlanoAtivadoEvento,
     clienteIdAtual,
     carregarDados,
   } = useClienteDashboardData({
@@ -170,10 +172,20 @@ export default function ClienteDashboard() {
     );
   }, [loading, dados, tipoCliente, exibirConfirmacao, fecharModalAlerta, reativarPlanoVencido]);
 
+  useEffect(() => {
+    if (!planoAtivadoEvento || loading) return;
+    const nomePlano = mapaPlanos[planoAtivadoEvento.planoSlug]?.nome || dados?.planoNome || 'seu plano';
+    const timer = window.setTimeout(() => {
+      limparPlanoAtivadoEvento();
+      exibirAlerta('Plano ativado!', `${nomePlano} foi ativado e já está disponível para uso.`);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [dados?.planoNome, exibirAlerta, limparPlanoAtivadoEvento, loading, mapaPlanos, planoAtivadoEvento]);
+
   const confirmarCortePlano = async () => {
     if (!empresaId) return;
 
-    const { error } = await supabase.rpc('confirmar_corte_plano', {
+    const { data: corteConfirmado, error } = await supabase.rpc('confirmar_corte_plano', {
       p_empresa_id: empresaId,
     });
 
@@ -185,6 +197,8 @@ export default function ClienteDashboard() {
         exibirAlerta('Limite atingido', 'Voce ja usou todos os cortes disponiveis do seu plano neste ciclo.');
       } else if (mensagem.includes('plano_ativo_nao_encontrado')) {
         exibirAlerta('Plano indisponivel', 'Seu plano precisa estar ativo para confirmar o corte.');
+      } else if (mensagem.includes('confirmacao_presencial_indisponivel')) {
+        exibirAlerta('Agendamento online ativo', 'Com o agendamento online ativo, use a opção Agendar com plano.');
       } else {
         exibirAlerta('Erro', 'Nao foi possivel confirmar o corte agora.');
       }
@@ -192,7 +206,11 @@ export default function ClienteDashboard() {
     }
 
     await carregarDados(clienteIdAtual());
-    navigate(montarRotaEmpresa(slugEmpresa, '/confirmado'));
+    if (!corteConfirmado?.id) {
+      exibirAlerta('Erro', 'A confirmacao foi registrada, mas nao foi possivel abrir os detalhes agora.');
+      return;
+    }
+    navigate(`${montarRotaEmpresa(slugEmpresa, '/confirmado')}?corte=${encodeURIComponent(corteConfirmado.id)}`);
   };
 
   const formatarDetalhesAgendamento = (agendamento) => {
@@ -359,6 +377,7 @@ export default function ClienteDashboard() {
         prazoCancelamentoMinutos={prazoCancelamentoMinutos}
         agendamentoAtivo={agendamentoAtivo}
         onAbrirAgendamentoPlano={abrirAgendamentoComPlano}
+        onRenovarPlano={abrirCheckoutPlano}
         onAbrirOutroServico={abrirAgendamentoAvulsoPendente}
         onConfirmarCortePlano={confirmarCortePlano}
         onVerAgendamento={verAgendamentoAvulso}

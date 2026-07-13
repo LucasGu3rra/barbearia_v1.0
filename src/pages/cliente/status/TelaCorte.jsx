@@ -1,25 +1,22 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../../services/supabase';
 import { useAuth } from '../../../contexts/useAuth';
 import { montarRotaEmpresa } from '../../../services/empresa';
 
-const assinaturaEstaVigente = (assinatura) => {
-  if (!assinatura || assinatura.status !== 'ativa' || !assinatura.data_vencimento) return false;
-  const vencimento = new Date(assinatura.data_vencimento);
-  return !Number.isNaN(vencimento.getTime()) && vencimento >= new Date();
-};
-
 export default function TelaCorte() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { empresaSlug } = useParams();
   const { user, empresaAtual, loading: authLoading } = useAuth();
   const empresaId = empresaAtual?.id;
   const slugEmpresa = empresaAtual?.slug || empresaSlug;
+  const corteIdRota = searchParams.get('corte');
   const [cancelando, setCancelando] = useState(false);
   const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [agoraMs, setAgoraMs] = useState(0);
+  const [validando, setValidando] = useState(true);
   const [dados, setDados] = useState({
     nome: '',
     cortes: 0,
@@ -33,74 +30,41 @@ export default function TelaCorte() {
   });
 
   const carregarDadosValidacao = useCallback(async () => {
-    setAgoraMs(new Date().getTime());
+    setValidando(true);
+    setAgoraMs(Date.now());
     const id = user?.id;
 
-    if (!id) {
-      navigate(empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/');
+    if (!id || !empresaId || !corteIdRota) {
+      navigate(id ? montarRotaEmpresa(slugEmpresa, '/dashboard') : empresaSlug ? montarRotaEmpresa(empresaSlug, '') : '/', { replace: true });
       return;
     }
 
-    const { data: dadosPlanos } = await supabase
-      .from('planos')
-      .select('slug, nome, limite, ilimitado')
-      .eq('empresa_id', empresaId);
-    const mapaPlanos = {};
-    dadosPlanos?.forEach((plano) => {
-      mapaPlanos[plano.slug] = plano;
+    const { data: confirmacao, error } = await supabase.rpc('obter_confirmacao_corte_plano', {
+      p_empresa_id: empresaId,
+      p_corte_id: corteIdRota,
     });
 
-    const { data: cli } = await supabase
-      .from('clientes')
-      .select('nome, assinaturas(status, ativada_em, data_vencimento, plano_escolhido)')
-      .eq('empresa_id', empresaId)
-      .eq('id', id)
-      .single();
-
-    const assinatura = cli?.assinaturas?.find(assinaturaEstaVigente) || null;
-    const planoAtual = mapaPlanos[assinatura?.plano_escolhido] || null;
-    if (!assinatura || !planoAtual) {
-      navigate(montarRotaEmpresa(slugEmpresa, '/dashboard'));
+    if (error || !confirmacao?.corte_id) {
+      if (error) console.error('Erro ao validar confirmação do corte:', error);
+      navigate(montarRotaEmpresa(slugEmpresa, '/dashboard'), { replace: true });
       return;
     }
-    const limiteDoPlano = planoAtual?.ilimitado ? 0 : planoAtual?.limite || 0;
-
-    const { data: ultimoCorte } = await supabase
-      .from('historico_cortes')
-      .select('id, tipo_corte, created_at, origem, status, cancelavel_ate')
-      .eq('empresa_id', empresaId)
-      .eq('cliente_id', id)
-      .neq('status', 'cancelado')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const inicioCiclo = assinatura?.ativada_em
-      || new Date(new Date(assinatura.data_vencimento).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-
-    const { count } = await supabase
-      .from('historico_cortes')
-      .select('*', { count: 'exact', head: true })
-      .eq('empresa_id', empresaId)
-      .eq('cliente_id', id)
-      .neq('status', 'cancelado')
-      .gte('created_at', inicioCiclo)
-      .lte('created_at', assinatura.data_vencimento);
 
     setDados({
-      nome: cli?.nome || 'Cliente',
-      cortes: count || 0,
-      ilimitado: Boolean(planoAtual?.ilimitado),
-      limiteTotal: limiteDoPlano,
-      planoNome: planoAtual?.nome || 'Plano',
-      vencimento: assinatura?.data_vencimento
-        ? new Date(assinatura.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+      nome: confirmacao.nome || 'Cliente',
+      cortes: Number(confirmacao.cortes || 0),
+      ilimitado: Boolean(confirmacao.ilimitado),
+      limiteTotal: Number(confirmacao.limite_total || 0),
+      planoNome: confirmacao.plano_nome || 'Plano',
+      vencimento: confirmacao.vencimento
+        ? new Date(confirmacao.vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
         : '--/--',
-      tipoCorte: ultimoCorte?.tipo_corte || planoAtual?.nome || 'Plano',
-      corteId: ultimoCorte?.origem === 'plano_confirmacao' ? ultimoCorte.id : null,
-      cancelavelAte: ultimoCorte?.origem === 'plano_confirmacao' ? ultimoCorte.cancelavel_ate : null,
+      tipoCorte: confirmacao.tipo_corte || confirmacao.plano_nome || 'Plano',
+      corteId: confirmacao.corte_id,
+      cancelavelAte: confirmacao.cancelavel_ate || null,
     });
-  }, [empresaId, empresaSlug, navigate, slugEmpresa, user?.id]);
+    setValidando(false);
+  }, [corteIdRota, empresaId, empresaSlug, navigate, slugEmpresa, user?.id]);
 
   useEffect(() => {
     if (authLoading || !empresaId) return;
@@ -133,11 +97,12 @@ export default function TelaCorte() {
       return;
     }
 
-    await carregarDadosValidacao();
     navigate(montarRotaEmpresa(slugEmpresa, '/dashboard'));
   };
 
   const scissorsPath = 'M9.64,7.64 C9.87,7.14 10,6.59 10,6 C10,3.79 8.21,2 6,2 C3.79,2 2,3.79 2,6 C2,8.21 3.79,10 6,10 C6.59,10 7.14,9.87 7.64,9.64 L10,12 L7.64,14.36 C7.14,14.13 6.59,14 6,14 C3.79,14 2,15.79 2,18 C2,20.21 3.79,22 6,22 C8.21,22 10,20.21 10,18 C10,17.41 9.87,16.86 9.64,16.36 L12,14 L19,21 H22 V20 L9.64,7.64 Z M6,8 C4.9,8 4,7.1 4,6 C4,4.9 4.9,4 6,4 C7.1,4 8,4.9 8,6 C8,7.1 7.1,8 6,8 Z M6,20 C4.9,20 4,19.1 4,18 C4,16.9 4.9,16 6,16 C7.1,16 8,16.9 8,18 C8,19.1 7.1,20 6,20 Z M19,3 L12,10 L14,12 L22,4 V3 H19 Z';
+
+  if (validando) return <div className="min-h-screen bg-[#0a0a0a]" />;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center pt-8 pb-8 px-5 font-sans relative">

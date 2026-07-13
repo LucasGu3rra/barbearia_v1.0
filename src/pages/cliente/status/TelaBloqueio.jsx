@@ -11,7 +11,7 @@ export default function TelaBloqueio() {
   const { user, empresaAtual, loading: authLoading } = useAuth();
   const empresaId = empresaAtual?.id;
   const slugEmpresa = empresaAtual?.slug || empresaSlug;
-  const whatsappEmpresa = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '5581988468182');
+  const whatsappEmpresa = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '');
   const [dados, setDados] = useState({ nome: '', iniciais: '', vencimento: '', planoResumo: '' });
 
   const carregarDados = useCallback(async () => {
@@ -108,7 +108,12 @@ export default function TelaBloqueio() {
 
         {/* BOTÃO PARA O WHATSAPP DO JOÃO */}
         <a 
-          href={`https://wa.me/${whatsappEmpresa}`} 
+          href={whatsappEmpresa ? `https://wa.me/${whatsappEmpresa}` : undefined}
+          onClick={(event) => {
+            if (whatsappEmpresa) return;
+            event.preventDefault();
+            alert('A barbearia ainda não configurou um WhatsApp para contato.');
+          }}
           target="_blank"
           rel="noreferrer"
           className="w-full bg-[#f83b3b] hover:bg-[#d43131] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/20"

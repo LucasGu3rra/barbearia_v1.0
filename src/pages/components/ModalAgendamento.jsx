@@ -126,15 +126,36 @@ export default function ModalAgendamento({
 
   const isAssinante = tipoCliente === 'assinante';
   const duracaoServico = Number((isAssinante && planoCliente?.duracaoMinutos) || servicoSelecionado?.duracao_minutos || 30);
+  const vencimentoPlano = isAssinante && planoCliente?.dataVencimento
+    ? new Date(planoCliente.dataVencimento)
+    : null;
+  const vencimentoPlanoValido = vencimentoPlano && !Number.isNaN(vencimentoPlano.getTime())
+    ? vencimentoPlano
+    : null;
   const dataHoraSelecionada = dataSelecionada && horarioSelecionado ? criarDataHora(dataSelecionada, horarioSelecionado) : null;
-  const horarioLimiteArrependimento = useMemo(() => {
-    if (!dataHoraSelecionada || !instanteAvisoCancelamento) return '';
-    const limite = new Date(Math.min(
-      instanteAvisoCancelamento + CANCELAMENTO_ARREPENDIMENTO_MINUTOS * 60000,
-      dataHoraSelecionada.getTime()
-    ));
-    return limite.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  }, [dataHoraSelecionada, instanteAvisoCancelamento]);
+  const prazoCancelamentoAplicado = useMemo(() => {
+    const prazo = Number(prazoCancelamentoMinutos);
+    return Number.isFinite(prazo) ? Math.max(0, Math.trunc(prazo)) : 120;
+  }, [prazoCancelamentoMinutos]);
+  const limiteCancelamentoNormal = useMemo(() => {
+    if (!dataHoraSelecionada) return null;
+    return new Date(dataHoraSelecionada.getTime() - prazoCancelamentoAplicado * 60000);
+  }, [dataHoraSelecionada, prazoCancelamentoAplicado]);
+  const dentroPrazoCancelamentoNormal = Boolean(
+    limiteCancelamentoNormal
+    && instanteAvisoCancelamento
+    && instanteAvisoCancelamento <= limiteCancelamentoNormal.getTime()
+  );
+  const limiteCancelamentoNormalFormatado = useMemo(() => {
+    if (!limiteCancelamentoNormal) return '';
+    const agora = new Date();
+    const hora = limiteCancelamentoNormal.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    if (mesmaData(limiteCancelamentoNormal, agora)) return `hoje, às ${hora}`;
+    return `${limiteCancelamentoNormal.toLocaleDateString('pt-BR')}, às ${hora}`;
+  }, [limiteCancelamentoNormal]);
 
   const carregarDados = useCallback(async () => {
     setCarregando(true);
@@ -187,6 +208,15 @@ export default function ModalAgendamento({
     carregarDados();
   }, [isOpen, empresaId, carregarDados]);
 
+  useEffect(() => {
+    if (!isOpen || step !== 4) return undefined;
+    setInstanteAvisoCancelamento(Date.now());
+    const atualizador = window.setInterval(() => {
+      setInstanteAvisoCancelamento(Date.now());
+    }, 15000);
+    return () => window.clearInterval(atualizador);
+  }, [isOpen, step]);
+
   const regraFuncionamentoDoDia = useCallback((data) => {
     if (!data) return null;
     const filialId = filialSelecionada?.id || filiais[0]?.id;
@@ -203,9 +233,12 @@ export default function ModalAgendamento({
         regra.intervalo_inicio?.substring(0, 5),
         regra.intervalo_fim?.substring(0, 5),
         data
-      ).some(horario => horarioCabeNoFuncionamento(horario, duracaoServico, regra));
+      ).some((horario) => {
+        if (!horarioCabeNoFuncionamento(horario, duracaoServico, regra)) return false;
+        return !vencimentoPlanoValido || criarDataHora(data, horario) <= vencimentoPlanoValido;
+      });
     })
-    .slice(0, 7), [duracaoServico, regraFuncionamentoDoDia]);
+    .slice(0, 7), [duracaoServico, regraFuncionamentoDoDia, vencimentoPlanoValido]);
 
   useEffect(() => {
     if (!dataSelecionada) return;
@@ -227,8 +260,11 @@ export default function ModalAgendamento({
       regra.intervalo_inicio?.substring(0, 5),
       regra.intervalo_fim?.substring(0, 5),
       dataSelecionada
-    ).filter(horario => horarioCabeNoFuncionamento(horario, duracaoServico, regra));
-  }, [dataSelecionada, duracaoServico, regraFuncionamentoDoDia]);
+    ).filter((horario) => {
+      if (!horarioCabeNoFuncionamento(horario, duracaoServico, regra)) return false;
+      return !vencimentoPlanoValido || criarDataHora(dataSelecionada, horario) <= vencimentoPlanoValido;
+    });
+  }, [dataSelecionada, duracaoServico, regraFuncionamentoDoDia, vencimentoPlanoValido]);
 
   const barbeirosDaFilial = useMemo(() => {
     if (!filialSelecionada?.id) return barbeiros;
@@ -386,18 +422,14 @@ export default function ModalAgendamento({
       await verificarConflitoAgendamento(dataHora);
       const barbeiroId = await obterBarbeiroDisponivel(dataHora);
 
-      const { data: agendamentoCriado, error } = await supabase.from('agendamentos').insert([{
-        cliente_id: clienteId,
-        empresa_id: empresaId,
-        filial_id: filialSelecionada.id,
-        servico_id: isAssinante ? null : servicoSelecionado.id,
-        plano_id: isAssinante ? planoCliente?.planoUuid : null,
-        barbeiro_id: barbeiroId,
-        data_hora: dataHora.toISOString(),
-        tipo_cliente: tipoCliente,
-        duracao_minutos: duracaoServico,
-        status: 'agendado',
-      }]).select('id').single();
+      const { data: agendamentoCriado, error } = await supabase.rpc('criar_agendamento_cliente', {
+        p_empresa_id: empresaId,
+        p_filial_id: filialSelecionada.id,
+        p_recurso_id: isAssinante ? planoCliente?.planoUuid : servicoSelecionado.id,
+        p_barbeiro_id: barbeiroId,
+        p_data_hora: dataHora.toISOString(),
+        p_tipo_cliente: isAssinante ? 'assinante' : 'avulso',
+      });
 
       if (error) throw error;
       if (agendamentoCriado?.id) {
@@ -419,6 +451,10 @@ export default function ModalAgendamento({
         setErro('O plano vinculado nao esta disponivel. Fale com a barbearia.');
       } else if (e.message === 'agendamento_online_desativado') {
         setErro('A barbearia pausou novos agendamentos online agora.');
+      } else if (e.message === 'horario_fora_funcionamento') {
+        setErro('Esse horário não faz parte do funcionamento configurado pela barbearia.');
+      } else if (['filial_indisponivel', 'barbeiro_indisponivel', 'servico_indisponivel'].includes(e.message)) {
+        setErro('Essa opção não está mais disponível. Volte e atualize as escolhas.');
       } else if (['23505', '23P01'].includes(e.code) || ['cliente_agendamento_conflito', 'barbeiro_agendamento_conflito'].includes(e.message)) {
         setErro('Esse horario acabou de ser ocupado. Escolha outro horario.');
       } else {
@@ -608,7 +644,9 @@ export default function ModalAgendamento({
                     <div className="rounded-[16px] border border-[#d5b451]/30 bg-[#d5b451]/10 p-4 mb-3 text-left">
                       <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.2em] mb-2">Uso do plano</p>
                       <p className="text-[#f5ead4] text-xs leading-relaxed font-semibold">
-                        {`Ao confirmar, este agendamento consome 1 uso do plano. Como o horário agendado excedeu o prazo normal de cancelamento de ${prazoCancelamentoMinutos} (MIN) de antecedência, você poderá cancelar em até ${CANCELAMENTO_ARREPENDIMENTO_MINUTOS} minutos após a confirmação do agendamento, até: ${horarioLimiteArrependimento}. Depois disso o uso não será devolvido.`}
+                        {dentroPrazoCancelamentoNormal
+                          ? `Ao confirmar, este agendamento consome 1 uso do plano. Você poderá cancelar até ${limiteCancelamentoNormalFormatado}, respeitando a antecedência de ${prazoCancelamentoAplicado} minutos configurada pela barbearia. Após esse prazo, o uso não será devolvido.`
+                          : `Ao confirmar, este agendamento consome 1 uso do plano. Como o prazo normal de cancelamento de ${prazoCancelamentoAplicado} minutos foi excedido, você poderá cancelar em até ${CANCELAMENTO_ARREPENDIMENTO_MINUTOS} minutos após a confirmação. Depois disso, o uso não será devolvido.`}
                       </p>
                     </div>
                   )}

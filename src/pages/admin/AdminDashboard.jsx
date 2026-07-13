@@ -483,7 +483,8 @@ export default function AdminDashboard() {
 
     const cortesHistoricoCiclo = cortesGerais.filter(corte => {
       const ehDesteCliente = corte.cliente_id === cliente.id && String(corte.status || 'feito').toLowerCase() !== 'cancelado';
-      return ehDesteCliente && dentroDoCiclo(corte.created_at);
+      const ehUsoPlano = Boolean(corte.plano_slug) || corte.origem === 'plano_confirmacao';
+      return ehDesteCliente && ehUsoPlano && dentroDoCiclo(corte.created_at);
     });
 
     const agendamentosValidosCliente = agenda.filter(agendamento => {
@@ -568,7 +569,10 @@ export default function AdminDashboard() {
   const aguardandoAtivacao = [];
   const aguardandoUpgrade = [];
   clientes.forEach(cliente => {
-    const pendentes = (cliente.assinaturas || []).filter(a => a.status === 'pendente');
+    const pendentes = (cliente.assinaturas || []).filter(a => (
+      a.status === 'pendente'
+      || (a.status === 'ativa' && a.solicitacao_tipo === 'renovacao' && a.solicitacao_plano_slug)
+    ));
     pendentes.forEach(assinaturaPendente => {
       aguardandoAtivacao.push({ ...cliente, assinatura: assinaturaPendente });
     });
@@ -1035,7 +1039,7 @@ export default function AdminDashboard() {
                   <div>
                     <h3 className="font-bold text-lg leading-tight"><span>{item.nome}</span></h3>
                     <p className="text-[#CEAA6B] text-[10px] font-bold uppercase mt-1">
-                      <span>{planosInfo[item.assinatura.plano_escolhido]?.nome || 'Plano Antigo'} • SOLICITADO EM {formatarData(item.assinatura.created_at)} ÀS {formatarHora(item.assinatura.created_at)}</span>
+                      <span>{item.assinatura.solicitacao_plano_nome || planosInfo[item.assinatura.solicitacao_plano_slug || item.assinatura.plano_escolhido]?.nome || 'Plano'} • SOLICITADO EM {formatarData(item.assinatura.solicitacao_em || item.assinatura.created_at)} ÀS {formatarHora(item.assinatura.solicitacao_em || item.assinatura.created_at)}</span>
                     </p>
                     <p className="text-zinc-500 text-[10px] mt-1"><span>WhatsApp: {item.whatsapp}</span></p>
                   </div>

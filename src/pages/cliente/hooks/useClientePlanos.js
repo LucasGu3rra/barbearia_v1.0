@@ -21,17 +21,22 @@ export default function useClientePlanos({
   const [pagamentoLoading, setPagamentoLoading] = useState(false);
 
   const copiarPix = () => {
+    if (!chavePix) {
+      exibirAlerta?.('Pix indisponível', 'A barbearia ainda não configurou uma chave Pix. Escolha pagamento presencial.');
+      return;
+    }
     navigator.clipboard.writeText(chavePix);
     setPixCopiado(true);
     setTimeout(() => setPixCopiado(false), 3000);
   };
 
-  const solicitarPlano = async (planoSlug) => {
+  const solicitarPlano = async (planoSlug, formaPagamento = 'nao_informado') => {
     if (!planoSlug) throw new Error('Plano nao informado.');
 
-    const { error } = await supabase.rpc('solicitar_plano_cliente', {
+    const { error } = await supabase.rpc('solicitar_pagamento_plano_cliente', {
       p_empresa_id: empresaId,
       p_plano_slug: planoSlug,
+      p_forma_pagamento: formaPagamento,
     });
 
     if (error) throw error;
@@ -58,7 +63,18 @@ export default function useClientePlanos({
   };
 
   const efetuarMudancaPlanoDireta = async (novoPlano) => {
-    await solicitarPlano(novoPlano);
+    try {
+      await solicitarPlano(novoPlano);
+      exibirAlerta?.('Solicitação registrada', 'O pedido foi enviado e aguarda confirmação da barbearia.');
+    } catch (error) {
+      console.error(error);
+      const mensagem = String(error?.message || '');
+      if (mensagem.includes('solicitacao_plano_pendente')) {
+        exibirAlerta?.('Solicitação pendente', 'Já existe um pedido de plano aguardando confirmação da barbearia. Ele não pode ser alterado enquanto estiver pendente.');
+      } else {
+        exibirAlerta?.('Erro', 'Não foi possível registrar a solicitação agora.');
+      }
+    }
   };
 
   const efetuarAgendamentoDowngrade = async (proximo) => {
@@ -84,7 +100,7 @@ export default function useClientePlanos({
     const valorNovo = Number(mapaPlanos[novoPlanoId].preco || 0);
     const valorAtual = Number(mapaPlanos[dados.planoId].preco || 0);
 
-    if (valorNovo < valorAtual) {
+    if (valorNovo <= valorAtual) {
       exibirConfirmacao(
         'Agendar mudanca',
         `A mudanca para ${mapaPlanos[novoPlanoId].nome} sera aplicada no proximo vencimento (${dados.vencimentoFormatado}). Ate la, seu plano atual continua ativo.`,
@@ -121,21 +137,12 @@ export default function useClientePlanos({
   const abrirCheckoutPlano = () => {
     setMenuAberto(false);
     setDados(prev => {
-      const planoAgendado = prev?.planoVencido && prev?.proximoPlano
-        ? mapaPlanos[prev.proximoPlano]
-        : null;
-      const usarPlanoAgendado = Boolean(
-        planoAgendado
-        && planoAgendado.ativo === true
-        && !planoAgendado.deleted_at
-      );
-
       return {
         ...prev,
         valorUpgrade: null,
-        planoPagamentoId: usarPlanoAgendado ? planoAgendado.slug : prev?.planoId,
-        planoPagamentoNome: usarPlanoAgendado ? planoAgendado.nome : prev?.planoNome,
-        precoPagamentoPlano: usarPlanoAgendado ? planoAgendado.preco : prev?.precoPlano,
+        planoPagamentoId: prev?.planoId,
+        planoPagamentoNome: prev?.planoNome,
+        precoPagamentoPlano: prev?.precoPlano,
       };
     });
     setModalCheckoutAberto(true);
@@ -155,6 +162,14 @@ export default function useClientePlanos({
 
   const abrirWhatsappPagamento = async () => {
     if (!dados || pagamentoLoading) return;
+    if (!chavePix) {
+      exibirAlerta?.('Pix indisponível', 'A barbearia ainda não configurou uma chave Pix. Escolha pagamento presencial.');
+      return;
+    }
+    if (!whatsappBarbearia) {
+      exibirAlerta?.('WhatsApp indisponível', 'A barbearia ainda não configurou o WhatsApp para receber comprovantes.');
+      return;
+    }
     const isUpgrade = Boolean(dados.valorUpgrade);
     const planoPagamentoId = dados.planoPagamentoId || dados.planoId;
     const planoPagamentoNome = dados.planoPagamentoNome || dados.planoNome;
@@ -167,7 +182,7 @@ export default function useClientePlanos({
         await solicitarUpgradePendente();
       } else {
         mensagem += `Estou solicitando a ativacao do *Plano ${planoPagamentoNome}*.\nPagamento via: *${metodoPagamento.toUpperCase()}*`;
-        await solicitarPlano(planoPagamentoId);
+        await solicitarPlano(planoPagamentoId, 'pix');
         localStorage.setItem(`pagamento_plano_${empresaId}_${clienteIdAtual()}_${planoPagamentoId || 'sem-plano'}`, 'iniciado');
       }
 
@@ -176,7 +191,14 @@ export default function useClientePlanos({
       if (isUpgrade) exibirAlerta?.('Upgrade solicitado', 'Seu pedido de upgrade foi enviado. Aguarde a confirmacao da barbearia.');
     } catch (error) {
       console.error(error);
-      exibirAlerta?.('Erro', 'Nao foi possivel registrar o pagamento agora. Tente novamente.');
+      const mensagem = String(error?.message || '');
+      if (mensagem.includes('solicitacao_plano_pendente')) {
+        exibirAlerta?.('Solicitação pendente', 'Já existe um pedido de plano aguardando confirmação da barbearia. Ele não pode ser alterado enquanto estiver pendente.');
+      } else if (mensagem.includes('plano_ainda_possui_usos')) {
+        exibirAlerta?.('Plano ainda disponível', 'A renovação antecipada fica disponível quando todos os usos do ciclo forem consumidos.');
+      } else {
+        exibirAlerta?.('Erro', 'Não foi possível registrar o pagamento agora. Tente novamente.');
+      }
     } finally {
       setPagamentoLoading(false);
     }
@@ -193,14 +215,21 @@ export default function useClientePlanos({
         await solicitarUpgradePendente();
         exibirAlerta?.('Upgrade solicitado', 'A solicitacao ficou registrada. Pague na barbearia para o admin confirmar.');
       } else {
-        await solicitarPlano(planoPagamentoId);
+        await solicitarPlano(planoPagamentoId, 'presencial');
         localStorage.setItem(`pagamento_plano_${empresaId}_${clienteIdAtual()}_${planoPagamentoId || 'sem-plano'}`, 'presencial');
         exibirAlerta?.('Pagamento presencial', 'Sua solicitacao ja esta pendente. Pague na barbearia para o admin confirmar.');
       }
       setModalCheckoutAberto(false);
     } catch (error) {
       console.error(error);
-      exibirAlerta?.('Erro', 'Nao foi possivel registrar o pagamento presencial agora.');
+      const mensagem = String(error?.message || '');
+      if (mensagem.includes('solicitacao_plano_pendente')) {
+        exibirAlerta?.('Solicitação pendente', 'Já existe um pedido de plano aguardando confirmação da barbearia. Ele não pode ser alterado enquanto estiver pendente.');
+      } else if (mensagem.includes('plano_ainda_possui_usos')) {
+        exibirAlerta?.('Plano ainda disponível', 'A renovação antecipada fica disponível quando todos os usos do ciclo forem consumidos.');
+      } else {
+        exibirAlerta?.('Erro', 'Não foi possível registrar o pagamento presencial agora.');
+      }
     } finally {
       setPagamentoLoading(false);
     }

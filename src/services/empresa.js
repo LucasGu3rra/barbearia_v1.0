@@ -44,8 +44,8 @@ export const getEmpresaPorSlug = async (slug) => {
     id: EMPRESA_PADRAO_ID,
     slug: EMPRESA_PADRAO_SLUG,
     nome: 'Barbearia do Joao',
-    whatsapp: '5581988468182',
-    chave_pix: '81988468182',
+    whatsapp: '',
+    chave_pix: '',
     logo_url: LOGO_PADRAO_URL,
     ativa: true,
   };

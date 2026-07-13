@@ -45,8 +45,8 @@ export default function EscolhaPlano() {
   const [popularPlanoSlug, setPopularPlanoSlug] = useState(null);
   const [carregando, setCarregando] = useState(true);
 
-  const chavePix = empresa?.chave_pix || '81988468182';
-  const whatsappBarbearia = normalizarTelefoneBrasil(empresa?.whatsapp || '5581988468182');
+  const chavePix = String(empresa?.chave_pix || '').trim();
+  const whatsappBarbearia = normalizarTelefoneBrasil(empresa?.whatsapp || '');
 
   useEffect(() => {
     const buscarDados = async () => {
@@ -65,28 +65,19 @@ export default function EscolhaPlano() {
         setEmpresa(empresaBase);
         const [
           { data: dadosPlanos, error: errPlanos },
-          { data: dadosAssinaturas, error: errAssinaturas },
+          { data: planoPopularSlug, error: errPlanoPopular },
         ] = await Promise.all([
           supabase.from('planos').select('*').eq('empresa_id', empresaBase.id).eq('ativo', true).is('deleted_at', null).order('preco', { ascending: true }),
-          supabase.from('assinaturas').select('plano_escolhido, status').eq('empresa_id', empresaBase.id).in('status', ['ativa', 'pendente']),
+          supabase.rpc('plano_popular_empresa', { p_empresa_id: empresaBase.id }),
         ]);
 
         if (errPlanos) throw errPlanos;
-        if (errAssinaturas) throw errAssinaturas;
+        if (errPlanoPopular) throw errPlanoPopular;
 
         const planosAtivos = dadosPlanos || [];
-        const contagemPlanos = (dadosAssinaturas || []).reduce((acc, assinatura) => {
-          if (!assinatura.plano_escolhido) return acc;
-          acc[assinatura.plano_escolhido] = (acc[assinatura.plano_escolhido] || 0) + 1;
-          return acc;
-        }, {});
-        const planoPopular = planosAtivos
-          .map((plano, index) => ({ slug: plano.slug, total: contagemPlanos[plano.slug] || 0, index }))
-          .sort((a, b) => b.total - a.total || a.index - b.index)[0];
-
         setPlanos(planosAtivos);
         setPlanoSelecionado(planosAtivos[0] || null);
-        setPopularPlanoSlug(planoPopular?.slug || planosAtivos[0]?.slug || null);
+        setPopularPlanoSlug(planoPopularSlug || null);
       } catch (error) {
         console.error('Erro ao carregar planos:', error);
       } finally {
@@ -116,6 +107,10 @@ export default function EscolhaPlano() {
   };
 
   const copiarPix = () => {
+    if (!chavePix) {
+      alert('A barbearia ainda não configurou uma chave Pix. Escolha pagamento presencial.');
+      return;
+    }
     navigator.clipboard.writeText(chavePix);
     setPixCopiado(true);
     setTimeout(() => setPixCopiado(false), 2000);
@@ -151,10 +146,13 @@ export default function EscolhaPlano() {
       const empresaId = empresa?.id || empresaAtual?.id;
       const empresaSlugDestino = empresa?.slug || empresaAtual?.slug || empresaSlug;
       if (!empresaId || !empresaSlugDestino) throw new Error('Empresa inválida.');
+      if (enviarWhatsapp && !chavePix) throw new Error('pix_indisponivel');
+      if (enviarWhatsapp && !whatsappBarbearia) throw new Error('whatsapp_indisponivel');
 
-      const { error: assinaturaError } = await supabase.rpc('solicitar_plano_cliente', {
+      const { error: assinaturaError } = await supabase.rpc('solicitar_pagamento_plano_cliente', {
         p_empresa_id: empresaId,
         p_plano_slug: planoSelecionado.slug,
+        p_forma_pagamento: enviarWhatsapp ? 'pix' : 'presencial',
       });
 
       if (assinaturaError) throw assinaturaError;
@@ -167,7 +165,18 @@ export default function EscolhaPlano() {
       navigate(montarRotaEmpresa(empresaSlugDestino, '/dashboard'));
     } catch (error) {
       console.error('Erro ao contratar plano:', error);
-      alert('Houve um erro ao salvar sua escolha. Tente novamente.');
+      const mensagem = String(error?.message || '');
+      if (mensagem.includes('solicitacao_plano_pendente')) {
+        alert('Já existe um pedido de plano aguardando confirmação da barbearia. Ele não pode ser alterado enquanto estiver pendente.');
+      } else if (mensagem.includes('plano_ainda_possui_usos')) {
+        alert('A renovação antecipada fica disponível quando todos os usos do ciclo forem consumidos.');
+      } else if (mensagem.includes('pix_indisponivel')) {
+        alert('A barbearia ainda não configurou uma chave Pix. Escolha pagamento presencial.');
+      } else if (mensagem.includes('whatsapp_indisponivel')) {
+        alert('A barbearia ainda não configurou o WhatsApp para receber comprovantes.');
+      } else {
+        alert('Houve um erro ao salvar sua escolha. Tente novamente.');
+      }
       setLoadingId(null);
     }
   }
