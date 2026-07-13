@@ -79,6 +79,7 @@ function PrimeiroUso({
   servicosAvulsos,
   temPlanos,
   agendamentoAtivo,
+  statusPlanoLabel = 'Sem plano ativo',
   onAbrirPlanos,
   onAbrirAgendamentoSemPlano,
 }) {
@@ -88,7 +89,7 @@ function PrimeiroUso({
         <HeroCard
           dados={dados}
           sub={`Cliente desde ${dados.clienteDesde || 'maio 2026'}`}
-          status={{ icon: 'x', label: 'Sem plano ativo', variant: 'none' }}
+          status={{ icon: 'x', label: statusPlanoLabel, variant: 'none' }}
           compact
         />
 
@@ -126,6 +127,8 @@ function Recorrente({
   ultimoServico,
   proximoAgendamento,
   agendamentoAtivo,
+  statusPlanoLabel = 'Sem plano ativo',
+  planoVencido = false,
   prazoCancelamentoMinutos,
   onAbrirPlanos,
   onAbrirAgendamentoSemPlano,
@@ -143,7 +146,7 @@ function Recorrente({
         <HeroCard
           dados={dados}
           sub={`Cliente desde ${dados.clienteDesde || 'maio 2026'}`}
-          status={{ icon: 'x', label: 'Sem plano ativo', variant: 'none' }}
+          status={{ icon: planoVencido ? 'clock' : 'x', label: statusPlanoLabel, variant: 'none' }}
         />
 
         {agendamentoAtivo && <PlanoCallout temPlanos={temPlanos} onAbrirPlanos={onAbrirPlanos} />}
@@ -173,7 +176,7 @@ function Recorrente({
             subtitle={semHistorico ? 'sem historico' : 'historico avulso'}
             disabled={semHistorico}
           />
-          <InfoCard label="Status" title="Sem plano ativo" tone="muted" />
+          <InfoCard label="Status" title={statusPlanoLabel} tone="muted" />
         </div>
 
         <div className={`grid gap-3 ${temAgendamentoAtivo || podeAbrirPlanos ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -206,8 +209,8 @@ function Recorrente({
           {podeAbrirPlanos && !temAgendamentoAtivo && (
             <ActionCard
               icon="crown"
-              title="Ver planos"
-              subtitle={temPlanos ? 'planos mensais' : 'consultar planos'}
+              title={planoVencido ? 'Reativar plano' : 'Ver planos'}
+              subtitle={planoVencido ? 'pagamento pendente' : temPlanos ? 'planos mensais' : 'consultar planos'}
               onClick={onAbrirPlanos}
             />
           )}
@@ -254,6 +257,8 @@ export default function ClienteDashboardAvulso({
   proximoAgendamento = null,
   prazoCancelamentoMinutos = 120,
   agendamentoAtivo = false,
+  statusPlanoLabel = 'Sem plano ativo',
+  planoVencido = false,
   onAbrirPlanos,
   onAbrirAgendamentoSemPlano,
   onVerAgendamento,
@@ -266,6 +271,7 @@ export default function ClienteDashboardAvulso({
         servicosAvulsos={servicosAvulsos}
         temPlanos={temPlanos}
         agendamentoAtivo={agendamentoAtivo}
+        statusPlanoLabel={statusPlanoLabel}
         onAbrirPlanos={onAbrirPlanos}
         onAbrirAgendamentoSemPlano={onAbrirAgendamentoSemPlano}
       />
@@ -282,6 +288,8 @@ export default function ClienteDashboardAvulso({
       proximoAgendamento={proximoAgendamento}
       prazoCancelamentoMinutos={prazoCancelamentoMinutos}
       agendamentoAtivo={agendamentoAtivo}
+      statusPlanoLabel={statusPlanoLabel}
+      planoVencido={planoVencido}
       onAbrirPlanos={onAbrirPlanos}
       onAbrirAgendamentoSemPlano={onAbrirAgendamentoSemPlano}
       onVerAgendamento={onVerAgendamento}

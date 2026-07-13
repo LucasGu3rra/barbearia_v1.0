@@ -127,12 +127,6 @@ export default function ModalAgendamento({
   const isAssinante = tipoCliente === 'assinante';
   const duracaoServico = Number((isAssinante && planoCliente?.duracaoMinutos) || servicoSelecionado?.duracao_minutos || 30);
   const dataHoraSelecionada = dataSelecionada && horarioSelecionado ? criarDataHora(dataSelecionada, horarioSelecionado) : null;
-  const agendamentoDentroPrazoCancelamento = Boolean(
-    isAssinante
-    && dataHoraSelecionada
-    && instanteAvisoCancelamento
-    && instanteAvisoCancelamento > dataHoraSelecionada.getTime() - Number(prazoCancelamentoMinutos || 0) * 60000
-  );
   const horarioLimiteArrependimento = useMemo(() => {
     if (!dataHoraSelecionada || !instanteAvisoCancelamento) return '';
     const limite = new Date(Math.min(
@@ -614,10 +608,7 @@ export default function ModalAgendamento({
                     <div className="rounded-[16px] border border-[#d5b451]/30 bg-[#d5b451]/10 p-4 mb-3 text-left">
                       <p className="text-[#d5b451] text-[10px] font-black uppercase tracking-[0.2em] mb-2">Uso do plano</p>
                       <p className="text-[#f5ead4] text-xs leading-relaxed font-semibold">
-                        Ao confirmar, este agendamento consome 1 uso do seu plano imediatamente.
-                        {agendamentoDentroPrazoCancelamento
-                          ? ` Como o horario agendado excedeu o prazo normal de cancelamento de ${prazoCancelamentoMinutos} min de antecedencia, voce podera cancelar apenas por ${CANCELAMENTO_ARREPENDIMENTO_MINUTOS} minutos apos confirmar, ate ${horarioLimiteArrependimento}. Depois disso o uso nao sera devolvido.`
-                          : ` Se cancelar ate ${prazoCancelamentoMinutos} minutos antes do horario, o uso volta para o seu plano.`}
+                        {`Ao confirmar, este agendamento consome 1 uso do plano. Como o horário agendado excedeu o prazo normal de cancelamento de ${prazoCancelamentoMinutos} (MIN) de antecedência, você poderá cancelar em até ${CANCELAMENTO_ARREPENDIMENTO_MINUTOS} minutos após a confirmação do agendamento, até: ${horarioLimiteArrependimento}. Depois disso o uso não será devolvido.`}
                       </p>
                     </div>
                   )}

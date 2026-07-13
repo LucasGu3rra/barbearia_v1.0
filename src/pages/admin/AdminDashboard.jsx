@@ -6,7 +6,7 @@ import ModalServicos from '../components/ModalServicos';
 import ModalConfiguracoes from '../components/ModalConfiguracoes';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
-import { enviarPushParaUsuarios, notificarAgendamento } from '../../services/notifications';
+import { enviarPushParaUsuarios } from '../../services/notifications';
 import ModalAlerta from "../components/ModalAlerta";
 import ModalPlanos from "../components/ModalPlanos";
 import NotificacoesModal from "../components/NotificacoesModal";
@@ -79,10 +79,13 @@ export default function AdminDashboard() {
   const [busca, setBusca] = useState('');
   
   const [dataFiltro, setDataFiltro] = useState(new Date());
+  const [referenciaDia, setReferenciaDia] = useState(new Date());
 
   const [modalConfig, setModalConfig] = useState({ 
     isOpen: false, type: 'alert', title: '', message: '', onConfirm: null 
   });
+  const [agendamentoDetalhe, setAgendamentoDetalhe] = useState(null);
+  const [corteDetalhe, setCorteDetalhe] = useState(null);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [modalPlanosAberto, setModalPlanosAberto] = useState(false);
@@ -223,6 +226,18 @@ export default function AdminDashboard() {
       realtimeRefreshTimerRef.current = null;
     }, 450);
   }, [carregarDados]);
+
+  useEffect(() => {
+    const agora = new Date();
+    const proximaVirada = new Date(agora);
+    proximaVirada.setHours(24, 0, 1, 0);
+
+    const timer = setTimeout(() => {
+      setReferenciaDia(new Date());
+    }, Math.max(proximaVirada.getTime() - agora.getTime(), 1000));
+
+    return () => clearTimeout(timer);
+  }, [referenciaDia]);
 
   useEffect(() => { 
     if (authLoading) return;
@@ -384,39 +399,17 @@ export default function AdminDashboard() {
     }
   };
 
-  const confirmarExclusaoAgendamento = (agendamento) => {
-    const nomeCliente = agendamento.clientes?.nome || 'Cliente';
-    const horario = formatarHora(agendamento.data_hora);
-    showConfirm(
-      'Excluir Agendamento',
-      `Tem certeza que deseja excluir o agendamento de ${nomeCliente} as ${horario}?`,
-      () => efetuarExclusaoAgendamento(agendamento.id)
-    );
-  };
-
-  const efetuarExclusaoAgendamento = async (agendamentoId) => {
-    fecharModal();
-    try {
-      await notificarAgendamento({ agendamentoId, evento: 'excluido' });
-      const { error } = await supabase
-        .from('agendamentos')
-        .delete()
-        .eq('id', agendamentoId)
-        .eq('empresa_id', empresaId);
-
-      if (error) throw error;
-      carregarDados();
-      showAlert('Removido', 'O agendamento foi excluido com sucesso.');
-    } catch (error) {
-      console.error(error);
-      showAlert('Erro', 'Nao foi possivel excluir o agendamento.');
-    }
-  };
-
   const formatarData = (dataStr) => {
     if (!dataStr) return '--/--';
     const d = new Date(dataStr);
     return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  };
+
+  const formatarDataHoraDetalhe = (dataStr) => {
+    if (!dataStr) return '--';
+    const d = new Date(dataStr);
+    if (Number.isNaN(d.getTime())) return '--';
+    return `${d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
   const formatarHora = (dataStr) => {
@@ -425,14 +418,16 @@ export default function AdminDashboard() {
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const mesAtual = new Date().getMonth();
-  const anoAtual = new Date().getFullYear();
-  const hojeInicio = new Date();
+  const mesAtual = referenciaDia.getMonth();
+  const anoAtual = referenciaDia.getFullYear();
+  const hojeInicio = new Date(referenciaDia);
   hojeInicio.setHours(0, 0, 0, 0);
   const hojeFim = new Date(hojeInicio);
   hojeFim.setHours(23, 59, 59, 999);
   const limiteVencimento = new Date(hojeInicio);
   limiteVencimento.setDate(limiteVencimento.getDate() + 7);
+  const limitePlanoInativo = new Date(hojeInicio);
+  limitePlanoInativo.setDate(limitePlanoInativo.getDate() - 30);
 
   const classificarCliente = (assinaturas = []) => {
     const assinaturasOrdenadas = [...assinaturas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -440,7 +435,13 @@ export default function AdminDashboard() {
     const ativa = assinaturasOrdenadas.find(a => a.status === 'ativa');
     if (ativa) {
       const vencimento = ativa.data_vencimento ? new Date(ativa.data_vencimento) : null;
-      if (!vencimento || vencimento < hojeInicio) return { assinatura: ativa, classificacao: 'inativo' };
+      if (!vencimento) return { assinatura: ativa, classificacao: 'inativo' };
+      if (vencimento < hojeInicio) {
+        return {
+          assinatura: ativa,
+          classificacao: vencimento >= limitePlanoInativo ? 'vencido' : 'inativo',
+        };
+      }
       if (vencimento && vencimento <= limiteVencimento) return { assinatura: ativa, classificacao: 'vencendo' };
       return { assinatura: ativa, classificacao: 'ativo' };
     }
@@ -449,7 +450,13 @@ export default function AdminDashboard() {
     if (pendente) return { assinatura: pendente, classificacao: 'pendente' };
 
     const ultima = assinaturasOrdenadas[0] || null;
-    if (ultima) return { assinatura: ultima, classificacao: 'inativo' };
+    if (ultima) {
+      const vencimento = ultima.data_vencimento ? new Date(ultima.data_vencimento) : null;
+      if (vencimento && vencimento < hojeInicio && vencimento >= limitePlanoInativo) {
+        return { assinatura: ultima, classificacao: 'vencido' };
+      }
+      return { assinatura: ultima, classificacao: 'inativo' };
+    }
     return { assinatura: null, classificacao: 'avulso' };
   };
 
@@ -533,9 +540,30 @@ export default function AdminDashboard() {
   const clientesAtivos = clientesProcessados.filter(c => c.classificacao === 'ativo');
   const clientesPendentes = clientesProcessados.filter(c => c.classificacao === 'pendente');
   const clientesVencendo = clientesProcessados.filter(c => c.classificacao === 'vencendo');
+  const clientesVencidos = clientesProcessados.filter(c => c.classificacao === 'vencido');
   const clientesInativos = clientesProcessados.filter(c => c.classificacao === 'inativo');
   const clientesAvulsos = clientesProcessados.filter(c => c.classificacao === 'avulso');
-  const novosItensPrimeiraAba = agendamentoAtivo ? novosAgendamentos : novosCortes;
+  const totalAgendamentosAtivos = agenda.filter(ag => ['agendado', 'confirmado', 'pendente'].includes(String(ag.status || '').toLowerCase())).length;
+  const cortesAgendamentosPlano = agenda
+    .filter(ag => {
+      const status = String(ag.status || '').toLowerCase();
+      return String(ag.tipo_cliente || '').toLowerCase() === 'assinante'
+        && ['finalizado', 'concluido'].includes(status);
+    })
+    .map(ag => ({
+      id: `agendamento-${ag.id}`,
+      created_at: ag.data_hora || ag.created_at,
+      tipo_corte: ag.planos?.nome || ag.servicos?.nome || 'Serviço',
+      cliente_id: ag.cliente_id,
+      status: ag.status || 'finalizado',
+      origem: 'agendamento_plano',
+      clientes: ag.clientes,
+      barbeiros: ag.barbeiros,
+      filiais: ag.filiais,
+      tipo_cliente: ag.tipo_cliente,
+    }));
+  const cortesUnificados = [...cortesGerais, ...cortesAgendamentosPlano]
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
   const aguardandoAtivacao = [];
   const aguardandoUpgrade = [];
@@ -585,9 +613,11 @@ export default function AdminDashboard() {
     listaClientesFiltrada = listaClientesFiltrada.filter(c => c.classificacao === 'avulso');
   } else if (abaAtiva === 'pendentes') {
     listaClientesFiltrada = listaClientesFiltrada.filter(c => c.classificacao === 'pendente');
+  } else if (abaAtiva === 'vencidos') {
+    listaClientesFiltrada = listaClientesFiltrada.filter(c => c.classificacao === 'vencido');
   }
 
-  const listaCortesFiltrada = cortesGerais.filter(corte => {
+  const listaCortesFiltrada = cortesUnificados.filter(corte => {
     if (String(corte.status || 'feito').toLowerCase().startsWith('cancelad')) return false;
     if (!dataFiltro) return true; 
     const d = new Date(corte.created_at);
@@ -596,13 +626,15 @@ export default function AdminDashboard() {
 
   const listaAgendaFiltrada = agenda.filter(ag => {
     if (!dataFiltro || !ag.data_hora) return false;
+    if (String(ag.status || '').toLowerCase().startsWith('cancelad')) return false;
     const d = new Date(ag.data_hora);
     return d.getDate() === dataFiltro.getDate() && d.getMonth() === dataFiltro.getMonth() && d.getFullYear() === dataFiltro.getFullYear();
   });
-  const cortesHoje = cortesGerais.filter(corte => {
+  const cortesHoje = cortesUnificados.filter(corte => {
     const dataCorte = new Date(corte.created_at);
-    return dataCorte >= hojeInicio && dataCorte <= hojeFim && String(corte.status || 'feito').toLowerCase() !== 'cancelado';
+    return dataCorte >= hojeInicio && dataCorte <= hojeFim && !String(corte.status || 'feito').toLowerCase().startsWith('cancelad');
   });
+  const novosItensPrimeiraAba = agendamentoAtivo ? Math.max(totalAgendamentosAtivos, novosAgendamentos) : cortesHoje.length;
   const totalAgendadosDia = listaAgendaFiltrada.filter(ag => ['agendado', 'confirmado', 'pendente'].includes(String(ag.status || '').toLowerCase())).length;
   const totalFinalizadosDia = listaAgendaFiltrada.filter(ag => ['finalizado', 'concluido'].includes(String(ag.status || '').toLowerCase())).length;
   const listaAgendaVisivel = listaAgendaFiltrada.filter(ag => {
@@ -638,6 +670,12 @@ export default function AdminDashboard() {
       badge: 'bg-[#CEAA6B]/10 text-[#CEAA6B]',
       icon: 'text-[#CEAA6B]',
     },
+    vencido: {
+      label: 'Vencido',
+      border: 'border-orange-500/35',
+      badge: 'bg-orange-500/10 text-orange-300',
+      icon: 'text-orange-300',
+    },
     inativo: {
       label: 'Inativo',
       border: 'border-red-500/30',
@@ -665,6 +703,12 @@ export default function AdminDashboard() {
         : 'Plano solicitado';
     }
 
+    if (cliente.classificacao === 'vencido') {
+      return cliente.planoDetalhe
+        ? `Plano vencido: ${cliente.planoDetalhe.nome || 'Plano'}`
+        : 'Plano vencido';
+    }
+
     if (cliente.classificacao === 'inativo') {
       return cliente.planoDetalhe
         ? `Ultimo plano: ${cliente.planoDetalhe.nome || 'Plano'}`
@@ -685,6 +729,10 @@ export default function AdminDashboard() {
       return 'Aguardando ativacao';
     }
 
+    if (cliente.classificacao === 'vencido') {
+      return 'Aguardando reativacao';
+    }
+
     if (cliente.classificacao === 'inativo') {
       return 'Plano inativo';
     }
@@ -703,6 +751,10 @@ export default function AdminDashboard() {
 
     if (cliente.classificacao === 'pendente') {
       return `Solicitado ${formatarData(cliente.assinatura?.created_at)}`;
+    }
+
+    if (cliente.classificacao === 'vencido') {
+      return cliente.assinatura?.data_vencimento ? `Venceu ${formatarData(cliente.assinatura.data_vencimento)}` : 'Plano vencido';
     }
 
     if (cliente.classificacao === 'inativo') {
@@ -758,6 +810,131 @@ export default function AdminDashboard() {
         onLimpar={limparNotificacoes}
         limpando={limpandoNotificacoes}
       />
+      {agendamentoDetalhe && (() => {
+        const nomeServicoDetalhe = agendamentoDetalhe.planos?.nome || agendamentoDetalhe.servicos?.nome || 'Serviço não informado';
+        const tipoAgendamentoDetalhe = String(agendamentoDetalhe.tipo_cliente || '').toLowerCase() === 'assinante' ? 'Plano' : 'Avulso';
+        const nomeBarbeiroDetalhe = agendamentoDetalhe.barbeiros?.nome || 'Sem barbeiro definido';
+        const nomeFilialDetalhe = agendamentoDetalhe.filiais?.nome || 'Local não informado';
+        const statusDetalhe = agendamentoDetalhe.status || 'Agendado';
+
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-5 backdrop-blur-sm">
+            <div className="w-full max-w-[360px] rounded-[26px] border border-[#27272a] bg-[#101010] p-5 shadow-2xl">
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <div>
+                  <p className="mb-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#CEAA6B]">Detalhes</p>
+                  <h3 className="text-xl font-black text-white">{agendamentoDetalhe.clientes?.nome || 'Cliente'}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAgendamentoDetalhe(null)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1d1d1d] text-zinc-500 active:scale-95"
+                  aria-label="Fechar detalhes"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Horário agendado</p>
+                  <p className="mt-1 text-sm font-bold text-white">{formatarDataHoraDetalhe(agendamentoDetalhe.data_hora)}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Serviço</p>
+                    <p className="mt-1 text-sm font-bold text-white">{nomeServicoDetalhe}</p>
+                  </div>
+                  <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Tipo</p>
+                    <p className="mt-1 text-sm font-bold text-white">{tipoAgendamentoDetalhe}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Com quem</p>
+                  <p className="mt-1 text-sm font-bold text-white">{nomeBarbeiroDetalhe}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Local</p>
+                    <p className="mt-1 text-sm font-bold text-white">{nomeFilialDetalhe}</p>
+                  </div>
+                  <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Status</p>
+                    <p className="mt-1 text-sm font-bold text-white">{statusDetalhe}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {corteDetalhe && (() => {
+        const nomeClienteDetalhe = corteDetalhe.clientes?.nome || 'Cliente';
+        const nomeCorteDetalhe = corteDetalhe.tipo_corte || 'Serviço';
+        const origemDetalhe = corteDetalhe.origem === 'agendamento_plano' ? 'Agendamento com plano' : 'Corte registrado';
+        const nomeBarbeiroDetalhe = corteDetalhe.barbeiros?.nome || 'Não informado';
+        const nomeFilialDetalhe = corteDetalhe.filiais?.nome || 'Local não informado';
+        const statusDetalhe = corteDetalhe.status || 'Registrado';
+
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-5 backdrop-blur-sm">
+            <div className="w-full max-w-[360px] rounded-[26px] border border-[#27272a] bg-[#101010] p-5 shadow-2xl">
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <div>
+                  <p className="mb-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#CEAA6B]">Detalhes do corte</p>
+                  <h3 className="text-xl font-black text-white">{nomeClienteDetalhe}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCorteDetalhe(null)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1d1d1d] text-zinc-500 active:scale-95"
+                  aria-label="Fechar detalhes"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Horário</p>
+                  <p className="mt-1 text-sm font-bold text-white">{formatarDataHoraDetalhe(corteDetalhe.created_at)}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Serviço</p>
+                    <p className="mt-1 text-sm font-bold text-white">{nomeCorteDetalhe}</p>
+                  </div>
+                  <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Origem</p>
+                    <p className="mt-1 text-sm font-bold text-white">{origemDetalhe}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Barbeiro</p>
+                    <p className="mt-1 text-sm font-bold text-white">{nomeBarbeiroDetalhe}</p>
+                  </div>
+                  <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Local</p>
+                    <p className="mt-1 text-sm font-bold text-white">{nomeFilialDetalhe}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-[16px] border border-[#27272a] bg-[#151515] p-4">
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Status</p>
+                  <p className="mt-1 text-sm font-bold text-white">{statusDetalhe}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <header className="flex justify-between items-center mb-8 mt-4">
         <h1 className="text-[#CEAA6B] font-black text-xl tracking-widest uppercase">Painel ADMIN</h1>
@@ -920,7 +1097,7 @@ export default function AdminDashboard() {
               </p>
               <h2 className="text-[#CEAA6B] font-bold text-lg">
                 <span>
-                  {dataFiltro && dataFiltro.toDateString() === new Date().toDateString() 
+                  {dataFiltro && dataFiltro.toDateString() === referenciaDia.toDateString()
                     ? (abaAtiva === 'agenda' ? 'Agenda de Hoje' : 'Cortes de Hoje') 
                     : formatarData(dataFiltro)}
                 </span>
@@ -973,38 +1150,34 @@ export default function AdminDashboard() {
                   const horaAgendamento = formatarHora(ag.data_hora);
                   const nomeCli = ag.clientes?.nome || 'Cliente Desconhecido';
                   const nomeServico = ag.planos?.nome || ag.servicos?.nome || 'Serviço não informado';
-                  const nomeBarbeiro = ag.barbeiros?.nome || 'Sem barbeiro';
                   const status = String(ag.status || 'agendado').toLowerCase();
 
                   return (
-                    <div key={ag.id} className="bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center gap-3">
+                    <button
+                      key={ag.id}
+                      type="button"
+                      onClick={() => setAgendamentoDetalhe(ag)}
+                      className="w-full bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center gap-3 text-left active:scale-[0.99] transition-transform"
+                    >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full border border-[#27272a] bg-[#09090b] flex items-center justify-center text-zinc-500 font-bold text-xs">
                           {getIniciais(nomeCli)}
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <h4 className="font-bold text-sm text-white"><span>{nomeCli}</span></h4>
-                          <p className="text-[10px] text-[#CEAA6B] font-medium uppercase tracking-wider"><span>{nomeServico} • {nomeBarbeiro}</span></p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-white"><span>{horaAgendamento}</span></p>
-                          <span className={`inline-block mt-1 text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${['finalizado', 'concluido'].includes(status) ? 'bg-emerald-500/10 text-emerald-500' : 'bg-[#CEAA6B]/10 text-[#CEAA6B]'}`}>
-                            {ag.status || 'Agendado'}
+                          <p className="truncate text-[10px] text-[#CEAA6B] font-medium uppercase tracking-wider"><span>{nomeServico}</span></p>
+                          <span className="mt-2 inline-flex rounded-full border border-[#27272a] px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                            Ver detalhes
                           </span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => confirmarExclusaoAgendamento(ag)}
-                          className="w-9 h-9 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center active:scale-95 transition-transform"
-                          aria-label="Excluir agendamento"
-                          title="Excluir agendamento"
-                        >
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                        </button>
                       </div>
-                    </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-white"><span>{horaAgendamento}</span></p>
+                        <span className={`inline-block mt-1 text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${['finalizado', 'concluido'].includes(status) ? 'bg-emerald-500/10 text-emerald-500' : 'bg-[#CEAA6B]/10 text-[#CEAA6B]'}`}>
+                          {ag.status || 'Agendado'}
+                        </span>
+                      </div>
+                    </button>
                   )
                 })
               ) : (
@@ -1020,21 +1193,29 @@ export default function AdminDashboard() {
                   const nomeCli = corte.clientes?.nome || 'Cliente Desconhecido';
                   
                   return (
-                    <div key={corte.id} className="bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center">
+                    <button
+                      key={corte.id}
+                      type="button"
+                      onClick={() => setCorteDetalhe(corte)}
+                      className="w-full bg-[#121212] border border-[#27272a] rounded-[16px] p-4 flex justify-between items-center text-left active:scale-[0.99] transition-transform"
+                    >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full border border-[#27272a] bg-[#09090b] flex items-center justify-center text-zinc-500 font-bold text-xs">
                           {getIniciais(nomeCli)}
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <h4 className="font-bold text-sm text-white"><span>{nomeCli}</span></h4>
-                          <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider"><span>{corte.tipo_corte}</span></p>
+                          <p className="truncate text-[10px] text-zinc-500 font-medium uppercase tracking-wider"><span>{corte.tipo_corte}</span></p>
+                          <span className="mt-2 inline-flex rounded-full border border-[#27272a] px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                            Ver detalhes
+                          </span>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-zinc-400"><span>{horaCorte}</span></p>
                         <p className="text-[10px] text-zinc-600"><span>Registrado</span></p>
                       </div>
-                    </div>
+                    </button>
                   )
                 })
               ) : (
@@ -1080,6 +1261,10 @@ export default function AdminDashboard() {
                 <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Vencendo</p>
                 <p className="mt-1 text-xl font-black text-white">{clientesVencendo.length}</p>
               </div>
+              <div className="min-w-[88px] rounded-2xl border border-orange-500/25 bg-[#121212] px-3 py-2.5">
+                <p className="text-[9px] font-black uppercase tracking-wider text-orange-300">Vencidos</p>
+                <p className="mt-1 text-xl font-black text-white">{clientesVencidos.length}</p>
+              </div>
               <div className="min-w-[88px] rounded-2xl border border-[#27272a] bg-[#121212] px-3 py-2.5">
                 <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Inativos</p>
                 <p className="mt-1 text-xl font-black text-white">{clientesInativos.length}</p>
@@ -1114,6 +1299,13 @@ export default function AdminDashboard() {
               className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'pendentes' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
             >
               Pendentes ({clientesPendentes.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setAbaAtiva('vencidos')}
+              className={`shrink-0 rounded-full px-5 py-2.5 text-xs font-black transition-colors ${abaAtiva === 'vencidos' ? 'bg-[#CEAA6B] text-black' : 'border border-[#27272a] bg-[#121212] text-zinc-500'}`}
+            >
+              Vencidos ({clientesVencidos.length})
             </button>
             <button
               type="button"

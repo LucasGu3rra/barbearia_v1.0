@@ -29,10 +29,12 @@ export default function ClienteCheckoutPlanoModal({
             <div className="stat-lbl">PLANO SELECIONADO</div>
             <div className="flex items-center justify-between mt-2 gap-3">
               <div className="text-white text-sm font-semibold">
-                {dados.valorUpgrade ? `Upgrade para ${mapaPlanos[dados.planoUpgradeId]?.nome}` : `Plano ${dados.planoNome}`}
+                {dados.valorUpgrade
+                  ? `Upgrade para ${mapaPlanos[dados.planoUpgradeId]?.nome}`
+                  : `Plano ${dados.planoPagamentoNome || dados.planoNome}`}
               </div>
               <div className="text-[#d5b451] text-[22px] font-black">
-                R${dados.valorUpgrade || dados.precoPlano}
+                R${(dados.valorUpgrade || dados.precoPagamentoPlano) ?? dados.precoPlano}
               </div>
             </div>
           </div>

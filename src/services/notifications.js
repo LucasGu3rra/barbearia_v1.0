@@ -1,21 +1,31 @@
 import { supabase } from './supabase';
 
-export const notificarAgendamento = async ({ agendamentoId, evento }) => {
-  if (!agendamentoId || !evento) return { ok: false, reason: 'missing-data' };
+const aguardar = (milissegundos) => new Promise((resolve) => {
+  window.setTimeout(resolve, milissegundos);
+});
 
-  const { data, error } = await supabase.functions.invoke('notificar-agendamento', {
-    body: {
-      agendamento_id: agendamentoId,
-      evento,
-    },
-  });
+export const notificarAgendamento = async ({ agendamentoId }) => {
+  if (!agendamentoId) return { ok: false, reason: 'missing-data' };
 
-  if (error) {
-    console.error('Erro ao notificar agendamento:', error);
-    return { ok: false, reason: 'function-error', error };
+  const intervalos = [0, 600, 1500];
+  let ultimoErro = null;
+
+  for (const intervalo of intervalos) {
+    if (intervalo > 0) await aguardar(intervalo);
+
+    const { data, error } = await supabase.functions.invoke('notificar-agendamento', {
+      body: {
+        agendamento_id: agendamentoId,
+      },
+    });
+
+    if (!error) return data || { ok: true };
+    ultimoErro = error;
   }
 
-  return data || { ok: true };
+  console.error('Erro ao notificar agendamento apos novas tentativas:', ultimoErro);
+
+  return { ok: false, reason: 'function-error', error: ultimoErro };
 };
 
 export const enviarPushParaUsuarios = async ({

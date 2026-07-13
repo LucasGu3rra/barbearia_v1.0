@@ -23,6 +23,16 @@ const assinaturaEstaVigente = (assinatura) => {
   return !Number.isNaN(vencimento.getTime()) && vencimento >= new Date();
 };
 
+const assinaturaVencidaRecente = (assinatura) => {
+  if (!assinatura?.plano_escolhido || assinatura.status === 'pendente') return false;
+  if (!assinatura.data_vencimento) return false;
+  const vencimento = new Date(assinatura.data_vencimento);
+  if (Number.isNaN(vencimento.getTime())) return false;
+  const limiteInativo = new Date();
+  limiteInativo.setDate(limiteInativo.getDate() - 30);
+  return vencimento < new Date() && vencimento >= limiteInativo;
+};
+
 const ordenarAssinaturasRecentes = (assinaturas = []) => (
   [...assinaturas].sort((a, b) => parseDataSupabase(b.created_at) - parseDataSupabase(a.created_at))
 );
@@ -96,10 +106,13 @@ export default function useClienteDashboardData({
       const assinaturasOrdenadas = ordenarAssinaturasRecentes(cli.assinaturas || []);
       const assinaturaAtiva = assinaturasOrdenadas.find(a => a.plano_escolhido && assinaturaEstaVigente(a));
       const assinaturaPendente = assinaturasOrdenadas.find(a => a.plano_escolhido && a.status === 'pendente');
-      const ass = assinaturaAtiva || assinaturaPendente || assinaturasOrdenadas.find(a => a.plano_escolhido) || null;
+      const assinaturaVencida = !assinaturaAtiva && !assinaturaPendente
+        ? assinaturasOrdenadas.find(a => assinaturaVencidaRecente(a))
+        : null;
+      const ass = assinaturaAtiva || assinaturaPendente || assinaturaVencida || assinaturasOrdenadas.find(a => a.plano_escolhido) || null;
       const temPlano = !!ass?.plano_escolhido;
       const statusAss = ass?.status;
-      const tipo = assinaturaAtiva ? 'ativo' : assinaturaPendente ? 'pendente' : 'avulso';
+      const tipo = assinaturaAtiva ? 'ativo' : assinaturaPendente ? 'pendente' : assinaturaVencida ? 'vencido' : 'avulso';
 
       setTipoCliente(tipo);
 
@@ -154,7 +167,7 @@ export default function useClienteDashboardData({
         iniciais: cli.nome.substring(0, 2).toUpperCase(),
         clienteDesde: dataCadastro.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
         alteracoesNome: cli.alteracoes_nome || 0,
-        status: tipo === 'avulso' ? null : statusAss || null,
+        status: tipo === 'vencido' ? 'vencido' : tipo === 'avulso' ? null : statusAss || null,
         ilimitado,
         limiteTotal: limite,
         cortesRestantes: ilimitado ? null : tipo === 'ativo' ? Math.max(0, limite - cortesUsoPlanoCiclo.length) : limite,
@@ -168,6 +181,7 @@ export default function useClienteDashboardData({
         precoPlano: planoInfo?.preco || 0,
         proximoPlano: ass?.proximo_plano,
         upgradePendente: ass?.upgrade_pendente,
+        planoVencido: tipo === 'vencido',
       });
     } catch (err) {
       console.error(err);

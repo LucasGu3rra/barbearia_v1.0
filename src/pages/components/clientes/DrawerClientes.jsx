@@ -165,6 +165,7 @@ export default function DrawerClientes({
   })();
 
   const planoPendente = tipoCliente === 'pendente' || dados.status === 'pendente';
+  const planoVencido = tipoCliente === 'vencido' || dados.status === 'vencido';
   const upgradePendente = dados.upgradePendente
     ? planosDb.find((plano) => plano.slug === dados.upgradePendente)
     : null;
@@ -206,11 +207,11 @@ export default function DrawerClientes({
             </div>
           </div>
 
-          {tipoCliente === 'pendente' && (
+          {(tipoCliente === 'pendente' || planoVencido) && (
             <div className="mt-5">
               <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Pagamento</p>
               <MenuButton onClick={onPagarPlano} badge="Pix">
-                Pagar plano
+                {planoVencido ? 'Reativar plano' : 'Pagar plano'}
               </MenuButton>
             </div>
           )}
@@ -225,6 +226,13 @@ export default function DrawerClientes({
                     Aguarde a confirmação do pagamento antes de trocar o plano solicitado.
                   </p>
                 </div>
+              ) : planoVencido ? (
+                <div className="rounded-[10px] border border-orange-500/25 bg-orange-500/5 p-3">
+                  <p className="text-sm font-black text-white">Plano vencido</p>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+                    Reative o plano para voltar a usar os cortes da assinatura.
+                  </p>
+                </div>
               ) : (
                 <button
                   type="button"
@@ -236,7 +244,7 @@ export default function DrawerClientes({
                 </button>
               )}
 
-              {!planoPendente && upgradePendente && (
+              {!planoPendente && !planoVencido && upgradePendente && (
                 <div className="mt-3 rounded-[10px] border border-[#d5b451]/25 bg-[#151207] p-3">
                   <p className="text-sm font-black text-white">Upgrade pendente</p>
                   <p className="mt-1 text-xs leading-relaxed text-zinc-400">
@@ -248,7 +256,7 @@ export default function DrawerClientes({
                 </div>
               )}
 
-              {!planoPendente && planosAbertos && (
+              {!planoPendente && !planoVencido && planosAbertos && (
                 <div className="mt-3 space-y-2">
                   {planosDb.map((plano) => (
                     <button

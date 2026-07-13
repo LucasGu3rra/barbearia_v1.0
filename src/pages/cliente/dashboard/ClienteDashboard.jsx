@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ModalAlerta from '../../components/ModalAlerta';
 import ModalAgendamento from '../../components/ModalAgendamento';
@@ -47,6 +47,7 @@ export default function ClienteDashboard() {
 
   const [menuAberto, setMenuAberto] = useState(false);
   const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
+  const avisoPlanoVencidoExibidoRef = useRef(false);
 
   const CHAVE_PIX = empresaAtual?.chave_pix || '81988468182';
   const WHATSAPP_JOAO = normalizarTelefoneBrasil(empresaAtual?.whatsapp || '5581988468182');
@@ -79,9 +80,9 @@ export default function ClienteDashboard() {
     isOpen: false, type: 'alert', title: '', message: '', onConfirm: null,
   });
 
-  const fecharModalAlerta = () => setConfigModalAlerta(p => ({ ...p, isOpen: false }));
-  const exibirAlerta = (title, message) => setConfigModalAlerta({ isOpen: true, type: 'alert', title, message, onConfirm: null });
-  const exibirConfirmacao = (title, message, acao) => setConfigModalAlerta({ isOpen: true, type: 'confirm', title, message, onConfirm: acao });
+  const fecharModalAlerta = useCallback(() => setConfigModalAlerta(p => ({ ...p, isOpen: false })), []);
+  const exibirAlerta = useCallback((title, message) => setConfigModalAlerta({ isOpen: true, type: 'alert', title, message, onConfirm: null }), []);
+  const exibirConfirmacao = useCallback((title, message, acao) => setConfigModalAlerta({ isOpen: true, type: 'confirm', title, message, onConfirm: acao }), []);
 
   const {
     modalCheckoutAberto,
@@ -150,6 +151,24 @@ export default function ClienteDashboard() {
     setMenuAberto(false);
     navigate(montarRotaEmpresa(slugEmpresa, '/planos'));
   };
+
+  const reativarPlanoVencido = useCallback(() => {
+    setMenuAberto(false);
+    abrirCheckoutPlano();
+  }, [abrirCheckoutPlano]);
+
+  useEffect(() => {
+    if (loading || !dados || tipoCliente !== 'vencido' || avisoPlanoVencidoExibidoRef.current) return;
+    avisoPlanoVencidoExibidoRef.current = true;
+    exibirConfirmacao(
+      'Plano vencido',
+      'Olá, seu plano venceu. Deseja reativar agora?',
+      () => {
+        fecharModalAlerta();
+        reativarPlanoVencido();
+      }
+    );
+  }, [loading, dados, tipoCliente, exibirConfirmacao, fecharModalAlerta, reativarPlanoVencido]);
 
   const confirmarCortePlano = async () => {
     if (!empresaId) return;
@@ -306,10 +325,11 @@ export default function ClienteDashboard() {
   const clienteAvulsoRecorrente = agendamentos.length > 0 || historicoCompleto.length > 0;
 
   const renderDashboardPorTipo = () => {
-    if (tipoCliente === 'avulso') {
+    if (tipoCliente === 'avulso' || tipoCliente === 'vencido') {
+      const planoVencido = tipoCliente === 'vencido';
       return (
         <ClienteDashboardAvulso
-          primeiroUso={!clienteAvulsoRecorrente}
+          primeiroUso={!clienteAvulsoRecorrente && !planoVencido}
           dados={dados}
           servicosAvulsos={servicosAvulsos}
           temPlanos={planosDb.length > 0}
@@ -319,7 +339,9 @@ export default function ClienteDashboard() {
           proximoAgendamento={proximoAgendamentoAvulso}
           prazoCancelamentoMinutos={prazoCancelamentoMinutos}
           agendamentoAtivo={agendamentoAtivo}
-          onAbrirPlanos={abrirPlanos}
+          statusPlanoLabel={planoVencido ? 'Plano vencido' : 'Sem plano ativo'}
+          planoVencido={planoVencido}
+          onAbrirPlanos={planoVencido ? reativarPlanoVencido : abrirPlanos}
           onAbrirAgendamentoSemPlano={abrirAgendamentoSemPlano}
           onVerAgendamento={verAgendamentoAvulso}
           onCancelarAgendamento={(agendamento) => cancelarAgendamentoCliente(agendamento, prazoCancelamentoMinutos)}

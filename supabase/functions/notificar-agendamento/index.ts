@@ -7,11 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type EventoAgendamento = "criado" | "cancelado" | "excluido";
-
 type Body = {
   agendamento_id?: string;
-  evento?: EventoAgendamento;
 };
 
 const jsonResponse = (body: unknown, status = 200) => (
@@ -60,6 +57,7 @@ const enviarPush = async ({
   corpo,
   tipo,
   dados,
+  eventoId,
 }: {
   supabaseAdmin: ReturnType<typeof createClient>;
   empresaId: string;
@@ -68,11 +66,12 @@ const enviarPush = async ({
   corpo: string;
   tipo: string;
   dados: Record<string, unknown>;
+  eventoId: string;
 }) => {
   const destinatarios = [...new Set(targetUserIds.filter(Boolean))];
   if (destinatarios.length === 0) return { targeted: 0, devices: 0, sent: 0, failed: 0 };
 
-  await supabaseAdmin.from("notificacoes").insert(
+  const { error: notificacoesError } = await supabaseAdmin.from("notificacoes").upsert(
     destinatarios.map((userId) => ({
       empresa_id: empresaId,
       user_id: userId,
@@ -80,8 +79,15 @@ const enviarPush = async ({
       corpo,
       tipo,
       dados,
+      evento_agendamento_id: eventoId,
     })),
+    {
+      onConflict: "evento_agendamento_id,user_id",
+      ignoreDuplicates: true,
+    },
   );
+
+  if (notificacoesError) throw notificacoesError;
 
   const { data: subscriptions, error } = await supabaseAdmin
     .from("push_subscriptions")
@@ -167,9 +173,8 @@ Deno.serve(async (req) => {
   }
 
   const body = await req.json().catch(() => ({})) as Body;
-  const evento = body.evento;
 
-  if (!body.agendamento_id || !["criado", "cancelado", "excluido"].includes(String(evento))) {
+  if (!body.agendamento_id) {
     return jsonResponse({ error: "Dados invalidos." }, 400);
   }
 
@@ -210,11 +215,30 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Usuario sem acesso ao agendamento." }, 403);
   }
 
-  const { data: admins } = await supabaseAdmin
+  const { data: eventosPendentes, error: eventosError } = await supabaseAdmin
+    .from("agendamento_notificacao_eventos")
+    .select("id, evento, created_at")
+    .eq("agendamento_id", agendamento.id)
+    .is("processado_em", null)
+    .order("created_at", { ascending: true });
+
+  if (eventosError) {
+    return jsonResponse({ error: "Erro ao buscar eventos de notificacao." }, 500);
+  }
+
+  if (!eventosPendentes?.length) {
+    return jsonResponse({ ok: true, processados: 0, duplicado: true });
+  }
+
+  const { data: admins, error: adminsError } = await supabaseAdmin
     .from("usuarios_empresas")
     .select("user_id")
     .eq("empresa_id", agendamento.empresa_id)
     .in("papel", ["dono", "admin"]);
+
+  if (adminsError) {
+    return jsonResponse({ error: "Erro ao buscar destinatarios." }, 500);
+  }
 
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 
@@ -237,76 +261,120 @@ Deno.serve(async (req) => {
     ? [agendamento.barbeiros.user_id]
     : [];
 
-  const eventoCancelamento = evento === "cancelado" || evento === "excluido";
   const resultados = [];
+  let processados = 0;
 
-  if (evento === "criado") {
-    resultados.push(await enviarPush({
-      supabaseAdmin,
-      empresaId: agendamento.empresa_id,
-      targetUserIds: [agendamento.cliente_id],
-      titulo: "Agendamento confirmado",
-      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}.`,
-      tipo: "agendamento_confirmado",
-      dados: { url: urlCliente, agendamento_id: agendamento.id },
-    }));
+  for (const eventoPendente of eventosPendentes) {
+    const { data: evento, error: claimError } = await supabaseAdmin
+      .rpc("reivindicar_evento_notificacao_agendamento", {
+        p_evento_id: eventoPendente.id,
+      });
 
-    resultados.push(await enviarPush({
-      supabaseAdmin,
-      empresaId: agendamento.empresa_id,
-      targetUserIds: usuariosAdmin,
-      titulo: "Novo agendamento!",
-      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
-      tipo: "novo_agendamento",
-      dados: { url: urlAdmin, agendamento_id: agendamento.id },
-    }));
+    if (claimError) {
+      return jsonResponse({ error: "Erro ao reservar evento de notificacao." }, 500);
+    }
 
-    resultados.push(await enviarPush({
-      supabaseAdmin,
-      empresaId: agendamento.empresa_id,
-      targetUserIds: usuariosBarbeiro,
-      titulo: "Novo agendamento!",
-      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
-      tipo: "novo_agendamento",
-      dados: { url: urlBarbeiro, agendamento_id: agendamento.id },
-    }));
-  }
+    if (!evento?.id) continue;
 
-  if (eventoCancelamento) {
-    resultados.push(await enviarPush({
-      supabaseAdmin,
-      empresaId: agendamento.empresa_id,
-      targetUserIds: [agendamento.cliente_id],
-      titulo: "Agendamento cancelado",
-      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}.`,
-      tipo: "agendamento_cancelado",
-      dados: { url: urlCliente, agendamento_id: agendamento.id },
-    }));
+    try {
+      if (evento.evento === "criado") {
+        resultados.push(await enviarPush({
+          supabaseAdmin,
+          empresaId: agendamento.empresa_id,
+          targetUserIds: [agendamento.cliente_id],
+          titulo: "Agendamento confirmado",
+          corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}.`,
+          tipo: "agendamento_confirmado",
+          dados: { url: urlCliente, agendamento_id: agendamento.id },
+          eventoId: evento.id,
+        }));
 
-    resultados.push(await enviarPush({
-      supabaseAdmin,
-      empresaId: agendamento.empresa_id,
-      targetUserIds: usuariosAdmin,
-      titulo: "Agendamento cancelado",
-      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
-      tipo: "agendamento_cancelado",
-      dados: { url: urlAdmin, agendamento_id: agendamento.id },
-    }));
+        resultados.push(await enviarPush({
+          supabaseAdmin,
+          empresaId: agendamento.empresa_id,
+          targetUserIds: usuariosAdmin,
+          titulo: "Novo agendamento!",
+          corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
+          tipo: "novo_agendamento",
+          dados: { url: urlAdmin, agendamento_id: agendamento.id },
+          eventoId: evento.id,
+        }));
 
-    resultados.push(await enviarPush({
-      supabaseAdmin,
-      empresaId: agendamento.empresa_id,
-      targetUserIds: usuariosBarbeiro,
-      titulo: "Agendamento cancelado",
-      corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
-      tipo: "agendamento_cancelado",
-      dados: { url: urlBarbeiro, agendamento_id: agendamento.id },
-    }));
+        resultados.push(await enviarPush({
+          supabaseAdmin,
+          empresaId: agendamento.empresa_id,
+          targetUserIds: usuariosBarbeiro,
+          titulo: "Novo agendamento!",
+          corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
+          tipo: "novo_agendamento",
+          dados: { url: urlBarbeiro, agendamento_id: agendamento.id },
+          eventoId: evento.id,
+        }));
+      }
+
+      if (evento.evento === "cancelado") {
+        resultados.push(await enviarPush({
+          supabaseAdmin,
+          empresaId: agendamento.empresa_id,
+          targetUserIds: [agendamento.cliente_id],
+          titulo: "Agendamento cancelado",
+          corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}.`,
+          tipo: "agendamento_cancelado",
+          dados: { url: urlCliente, agendamento_id: agendamento.id },
+          eventoId: evento.id,
+        }));
+
+        resultados.push(await enviarPush({
+          supabaseAdmin,
+          empresaId: agendamento.empresa_id,
+          targetUserIds: usuariosAdmin,
+          titulo: "Agendamento cancelado",
+          corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
+          tipo: "agendamento_cancelado",
+          dados: { url: urlAdmin, agendamento_id: agendamento.id },
+          eventoId: evento.id,
+        }));
+
+        resultados.push(await enviarPush({
+          supabaseAdmin,
+          empresaId: agendamento.empresa_id,
+          targetUserIds: usuariosBarbeiro,
+          titulo: "Agendamento cancelado",
+          corpo: `Servico: ${nomeServico}. Data: ${quando.data}. Horario: ${quando.hora}. Cliente: ${nomeCliente}.`,
+          tipo: "agendamento_cancelado",
+          dados: { url: urlBarbeiro, agendamento_id: agendamento.id },
+          eventoId: evento.id,
+        }));
+      }
+
+      const { error: concluirError } = await supabaseAdmin
+        .from("agendamento_notificacao_eventos")
+        .update({
+          processado_em: new Date().toISOString(),
+          processando_em: null,
+          ultimo_erro: null,
+        })
+        .eq("id", evento.id);
+
+      if (concluirError) throw concluirError;
+      processados += 1;
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : "Falha ao enviar notificacao.";
+      await supabaseAdmin
+        .from("agendamento_notificacao_eventos")
+        .update({
+          processando_em: null,
+          ultimo_erro: mensagem.slice(0, 500),
+        })
+        .eq("id", evento.id);
+
+      return jsonResponse({ error: "Erro ao processar notificacao." }, 500);
+    }
   }
 
   return jsonResponse({
     ok: true,
-    evento,
+    processados,
     resultados,
   });
 });
